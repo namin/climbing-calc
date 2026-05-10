@@ -16,11 +16,15 @@ under an admitted schema. -/
 /-- Bare theory: no schemas, no operators. -/
 def T_bare : Theory := Theory.empty
 
-/-! ### Scene 2 — Install the structural schema -/
+/-! ### Scene 2 — Install the structural schema
+
+Each `installSchema` call requires a `SchemaAdmissible` proof witnessing
+name freshness. We supply it with `by decide`; the build fails if any
+admission precondition is violated. -/
 
 /-- Level 0 (the conventional starting point of the keynote demo):
 `structural` admitted, no operators yet. -/
-def T₀ : Theory := T_bare.installSchema structuralSchema
+def T₀ : Theory := T_bare.installSchema structuralSchema ⟨by decide⟩
 
 /-! ### Scene 3 — Climb under structural: add, mul, exp
 
@@ -128,9 +132,17 @@ def predOp : Operator where
     | [n] => predImpl n
     | _   => 0
 
-/-- Theory after structural-schema climb: PR operators admitted. -/
-def T₁ : Theory := T₀.installOps
-  [predOp, doubleOp, addOp, mulOp, expOp, factOp, fibOp]
+/-- Theory after structural-schema climb: PR operators admitted, one
+per `installOp` call with an `OperatorAdmissible` proof. Each `by
+decide` checks: declared schema is in the theory, name is fresh. -/
+def T_pred   : Theory := T₀.installOp       predOp   ⟨by decide, by decide⟩
+def T_double : Theory := T_pred.installOp   doubleOp ⟨by decide, by decide⟩
+def T_add    : Theory := T_double.installOp addOp    ⟨by decide, by decide⟩
+def T_mul    : Theory := T_add.installOp    mulOp    ⟨by decide, by decide⟩
+def T_exp    : Theory := T_mul.installOp    expOp    ⟨by decide, by decide⟩
+def T_fact   : Theory := T_exp.installOp    factOp   ⟨by decide, by decide⟩
+def T_fib    : Theory := T_fact.installOp   fibOp    ⟨by decide, by decide⟩
+abbrev T₁ : Theory := T_fib
 
 /-! ### Scene 4 — Install the lex2 schema
 
@@ -139,7 +151,7 @@ third clause `A(n+1, m+1) = A(n, A(n+1, m))` has a recursive call with
 the *same* first argument. To admit it, we need lexicographic order. -/
 
 /-- Level 2: structural + lex2, but no new operators yet. -/
-def T₂ : Theory := T₁.installSchema lex2Schema
+def T₂ : Theory := T₁.installSchema lex2Schema ⟨by decide⟩
 
 /-! ### Scene 5 — Climb under lex2: Ackermann
 
@@ -192,7 +204,9 @@ def sudanOp : Operator where
     | _         => 0
 
 /-- Climbed theory: structural + lex2; PR operators + ackermann + sudan. -/
-def T_climbed : Theory := T₂.installOps [ackermannOp, sudanOp]
+def T_ack   : Theory := T₂.installOp    ackermannOp ⟨by decide, by decide⟩
+def T_sudan : Theory := T_ack.installOp sudanOp     ⟨by decide, by decide⟩
+abbrev T_climbed : Theory := T_sudan
 
 /-! ### Scene 5b — the refusal witness
 
@@ -214,6 +228,40 @@ The recursive call `badAckImpl (n + 1) m` has the *same* first
 argument, so a structural measure on `n` alone doesn't decrease.
 Installing `lex2` (which `ackImpl` and `sudanImpl` use implicitly via
 Lean's default lex measure) is what closes the gap. -/
+
+/-! ### Scene 5c — admission-gate refusals
+
+Each of the following would fit the shape of an admissible declaration
+*on its face*, but the admissibility precondition refuses it. Uncomment
+any one to verify; the build fails with a `decide` failure on the
+relevant `OperatorAdmissible` field.
+
+```lean
+-- (1) Operator referencing a schema that hasn't been installed:
+def bogusSchemaRef : Operator where
+  name := "weird"; arity := 1; schema := "made-up"
+  fn := fun _ => 0
+def T_bogus1 : Theory :=
+  T_climbed.installOp bogusSchemaRef ⟨by decide, by decide⟩
+-- decide fails: T_climbed.hasSchema "made-up" = false ≠ true
+
+-- (2) Operator shadowing an existing name:
+def shadowAck : Operator where
+  name := "ackermann"; arity := 2; schema := "lex2"
+  fn := fun _ => 0
+def T_bogus2 : Theory :=
+  T_climbed.installOp shadowAck ⟨by decide, by decide⟩
+-- decide fails: T_climbed.hasOperator "ackermann" = true ≠ false
+
+-- (3) Schema with a name that's already taken:
+def dupSchema : Schema where
+  name := "structural"; Carrier := Nat
+  rel := fun _ _ => True; wf := ⟨fun _ => Acc.intro _ (by intro y h; exact absurd h (by sorry))⟩
+def T_bogus3 : Theory :=
+  T_climbed.installSchema dupSchema ⟨by decide⟩
+-- decide fails: T_climbed.hasSchema "structural" = true ≠ false
+```
+-/
 
 /-! ### Scene 6 — Compute -/
 

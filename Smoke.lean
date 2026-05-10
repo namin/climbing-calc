@@ -59,8 +59,8 @@ def main : IO Unit := do
   IO.println ""
 
   IO.println "Scene 7: the line crossed"
-  showApply T_climbed "ackermann" [3, 7]
+  showApply T_climbed "ackermann" [3, 8]
   showApply T_climbed "exp" [2, 10]
   showApply T_climbed "fact" [10]
-  IO.println "  ackermann(n, m) outgrows any fixed tower of exp;"
-  IO.println "  lex2 is the schema that admits this recursion shape."
+  IO.println "  A(3, 8) = 2045 > 1024 = exp(2, 10);"
+  IO.println "  Ackermann outgrows any fixed exponential; lex2 admits the shape."

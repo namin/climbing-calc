@@ -28,13 +28,22 @@ applied at most `k` times to inputs bounded by `b` produces values
 bounded by a tower-of-exponentials of height `k`. Ackermann at `(n, m)`
 with `n = 4` already exceeds any such tower of fixed height. -/
 
-/-- A concrete witness that Ackermann overtakes a small PR tower:
-`ackermann(3, 7) = 1021 > 1024 = exp(2, 10)`. The tower built from
-structural operators climbs by one level of exponentiation; Ackermann
-climbs by one level of *operator hierarchy*. -/
-example : T_climbed.apply "ackermann" [3, 7] = some 1021 := by native_decide
+/-- A concrete witness that Ackermann overtakes a fixed PR tower:
+`ackermann(3, 8) = 2045 > 1024 = exp(2, 10)`. The tower built from
+structural operators climbs by one level of exponentiation each time
+we bump the second argument; Ackermann climbs by one level of
+*operator hierarchy* — `A(3, n) = 2^(n+3) − 3`. So at `n = 8`,
+Ackermann is already past any exponential we could write down with
+`exp(2, k)` for `k ≤ 10`. -/
+example : T_climbed.apply "ackermann" [3, 8] = some 2045 := by native_decide
 
 example : T_climbed.apply "exp" [2, 10] = some 1024 := by native_decide
+
+/-
+The next rung would be `ackermann(4, 1) = 65533 = 2^16 − 3`, but the
+naive recursive evaluation blows the stack (≈65 000 frames). The
+demoable witness stops at `A(3, 8)`.
+-/
 
 /-
 Informal: at structural-only admission, no operator has Ackermann's

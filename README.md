@@ -76,7 +76,23 @@ Scene 7: the line crossed
 The kernel-checked invariants live in the Lean types themselves. A
 `Schema` value cannot exist without a constructive `WellFounded` proof;
 an `Operator` value cannot exist without a Lean-typed total function.
-**The "without check" world is not even expressible without `sorry`.**
+`Theory.installSchema` requires a `SchemaAdmissible` proof (name
+fresh); `Theory.installOp` requires `OperatorAdmissible` (declared
+schema present *and* operator name fresh). Bogus admissions — claiming
+a schema that hasn't been installed, or shadowing an existing operator
+— are rejected at admission time.
+
+**Honest scoping.** What v1 does *not* enforce is the structural
+coupling between an operator's `fn` and its declared schema's
+relation. An `Operator` carries `fn : List Nat → Nat` as opaque Lean
+data, and Lean's type checker accepts any total function regardless
+of which schema name appears on the record. The bound between "I
+declared `schema := "lex2"`" and "my recursion actually decreases
+under lex2" lives at the level of code review and Lean's elaborator
+choosing a measure for the underlying function definition — not the
+calculator's gate. Closing that gap is v2: an embedded operator
+language with structural termination certificates per recursive call.
+See [`DESIGN.md`](DESIGN.md).
 
 ## The climb
 

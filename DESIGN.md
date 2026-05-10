@@ -202,18 +202,74 @@ v2 adds ~600 LOC for the LLM cascade and the ε₀ rung.
 
 ## Scope
 
-**In scope:**
-- Levels 0 (PR), 1 (lex / Ackermann).
-- Kernel-checked schema and operator admission.
-- Separating-model witness that the climb crosses an unreachable line.
+**In scope (v1, shipped):**
+- Levels 0 (structural) and 2 (structural + lex2).
+- Two schemas (`structural`, `lex2`) with WF proofs.
+- Operators: pred, double, add, mul, exp, fact, fib (structural);
+  ackermann, sudan (lex2).
+- Admission preconditions: `SchemaAdmissible` (name fresh),
+  `OperatorAdmissible` (declared schema present, name fresh).
+- Refusal witnesses: commented bogus-admission examples that the
+  `by decide` proof obligation rejects at compile time.
 
-**Out of scope for v1:**
+**Known limitation of v1 (deferred to v2):**
+- The bind between an operator's `fn` and its declared schema's
+  relation is **informal**. An `Operator` carries `fn : List Nat → Nat`
+  as opaque Lean data; the kernel accepts any total Lean function
+  regardless of which schema name appears on the record. The current
+  artifact illustrates the *architecture* of proof-bearing admission
+  (and the most obvious abuses are blocked by `OperatorAdmissible`),
+  but does not formally certify that the operator's recursive calls
+  decrease under its declared schema. Closing this gap requires an
+  embedded operator language; see below.
+
+**Out of scope (deferred to v2 / v3):**
+- Embedded operator language with structural termination certificates.
 - Full Veblen hierarchy / ordinal notations.
 - Higher-order operators.
 - Polymorphic types.
 - A general-purpose programming surface.
-- LLM proposer (v2).
-- Goodstein / ε₀ rung (v2).
+- LLM proposer cascade.
+- Goodstein / ε₀ rung.
+
+## v2 plan: embedded operator language
+
+The structural fix for the v1 limitation is to stop representing
+operators as opaque Lean functions. Give the calculator a small
+expression language:
+
+```lean
+inductive Expr (arity : Nat) where
+  | lit  : Nat → Expr arity
+  | arg  : Fin arity → Expr arity
+  | succ : Expr arity → Expr arity
+  | pred : Expr arity → Expr arity
+  | ifZero : Expr arity → Expr arity → Expr arity → Expr arity
+  | call : (name : String) → (es : List (Expr arity)) → Expr arity
+```
+
+Then an `Operator` carries `body : Expr arity` together with a
+termination certificate of the form:
+
+> For every syntactic recursive call `call self [e₁, …, eₖ]` in
+> `body`, evaluating `e₁, …, eₖ` under any input argument vector `v`
+> produces a vector `v'` with `schema.rel v' v`.
+
+The certificate is checked by the kernel before admission. The
+calculator can then inspect proposed operator bodies *as data*,
+verify their schema-relative termination, and only then extend its
+own accepted operator set. That turns the artifact from:
+
+> Lean proves these functions total, and the calculator records a
+> schema label.
+
+into:
+
+> The calculator receives an operator description, checks its
+> schema-relative termination certificate, and only then extends
+> itself.
+
+The latter is much closer to "reasonable reflection."
 
 ## Risks
 
