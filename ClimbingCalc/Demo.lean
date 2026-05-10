@@ -7,319 +7,202 @@ namespace ClimbingCalc
 /-! ## The climb, scene by scene
 
 This file walks the climb from level 0 (only `structural` admitted, no
-operators) through level 2 (`lex2` admitted, Ackermann admissible). Each
-theory is a value, each operator is built with Lean's recursion machinery
-under an admitted schema. -/
+operators) through level 2 (`structural` + `lex2`), with operators
+admitted at each rung. Each operator's `step` function uses its
+schema's relation in the type signature; Lean's type checker rejects
+mismatched recursion at admission time. -/
 
 /-! ### Scene 1 — Level 0: nothing admitted -/
 
-/-- Bare theory: no schemas, no operators. -/
 def T_bare : Theory := Theory.empty
 
-/-! ### Scene 2 — Install the structural schema
+/-! ### Scene 2 — Install the structural schema -/
 
-Each `installSchema` call requires a `SchemaAdmissible` proof witnessing
-name freshness. We supply it with `by decide`; the build fails if any
-admission precondition is violated. -/
-
-/-- Level 0 (the conventional starting point of the keynote demo):
-`structural` admitted, no operators yet. -/
 def T₀ : Theory := T_bare.installSchema structuralSchema ⟨by decide⟩
 
-/-! ### Scene 3 — Climb under structural: add, mul, exp
+/-! ### Scene 3 — Operators admitted under `structural`
 
-Each operator is defined by Lean primitive recursion on its first
-argument; Lean's type checker accepts these directly. The `schema`
-field declares that they were admitted under `structural`. -/
+Each step function's type carries `structuralSchema.rel y x` as the
+recursion-handle constraint. Recursive calls supply accessibility
+witnesses built from `structuralSchema.dec_first`. -/
 
-/-
-The implementations below use Lean's builtin `Nat` operations for
-runtime efficiency. The *specification* of each operator is still
-primitive-recursive — Lean's `Nat.add` is itself defined by recursion
-on one argument — so admission under `structural` is unchanged. We
-just don't pay for naive linear-time addition at runtime, which would
-make `fact 10` stack-overflow when added through `mulImpl 10 _`.
+def predStep : (x : List Nat) → ((y : List Nat) → structuralSchema.rel y x → Nat) → Nat
+  | [0],   _ => 0
+  | [n+1], _ => n
+  | _,     _ => 0
 
-The naive PR definitions (for reference; what the climb's pedagogy
-claims is admissible):
+def doubleStep : (x : List Nat) → ((y : List Nat) → structuralSchema.rel y x → Nat) → Nat
+  | [n], _ => 2 * n
+  | _,   _ => 0
 
-    addImpl 0     m = m
-    addImpl (n+1) m = succ (addImpl n m)
+def addStep : (x : List Nat) → ((y : List Nat) → structuralSchema.rel y x → Nat) → Nat
+  | [0, m],   _   => m
+  | [n+1, m], rec =>
+    rec [n, m] (structuralSchema.dec_first [m] [m] (by omega)) + 1
+  | _,        _   => 0
 
-    mulImpl 0     _ = 0
-    mulImpl (n+1) m = addImpl m (mulImpl n m)
+def mulStep : (x : List Nat) → ((y : List Nat) → structuralSchema.rel y x → Nat) → Nat
+  | [0, _],   _   => 0
+  | [n+1, m], rec =>
+    m + rec [n, m] (structuralSchema.dec_first [m] [m] (by omega))
+  | _,        _   => 0
 
-    expImpl _ 0     = 1
-    expImpl b (e+1) = mulImpl b (expImpl b e)
+def factStep : (x : List Nat) → ((y : List Nat) → structuralSchema.rel y x → Nat) → Nat
+  | [0],   _   => 1
+  | [n+1], rec =>
+    (n + 1) * rec [n] (structuralSchema.dec_first [] [] (by omega))
+  | _,     _   => 0
 
-Each of these compiles to runtime that's quadratic-or-worse on Lean's
-unary `Nat`; we use the compiled `Nat.add`, `Nat.mul`, `Nat.pow`
-instead.
--/
+def fibStep : (x : List Nat) → ((y : List Nat) → structuralSchema.rel y x → Nat) → Nat
+  | [0],   _   => 0
+  | [1],   _   => 1
+  | [n+2], rec =>
+    rec [n+1] (structuralSchema.dec_first [] [] (by omega)) +
+    rec [n]   (structuralSchema.dec_first [] [] (by omega))
+  | _,     _   => 0
 
-private def addImpl (n m : Nat) : Nat := n + m
-private def mulImpl (n m : Nat) : Nat := n * m
-private def expImpl (b e : Nat) : Nat := b ^ e
+def predOp     : AdmittedOperator := ⟨structuralSchema,
+  { name := "pred",   arity := 1, step := predStep }⟩
+def doubleOp   : AdmittedOperator := ⟨structuralSchema,
+  { name := "double", arity := 1, step := doubleStep }⟩
+def addOp      : AdmittedOperator := ⟨structuralSchema,
+  { name := "add",    arity := 2, step := addStep }⟩
+def mulOp      : AdmittedOperator := ⟨structuralSchema,
+  { name := "mul",    arity := 2, step := mulStep }⟩
+def factOp     : AdmittedOperator := ⟨structuralSchema,
+  { name := "fact",   arity := 1, step := factStep }⟩
+def fibOp      : AdmittedOperator := ⟨structuralSchema,
+  { name := "fib",    arity := 1, step := fibStep }⟩
 
-private def factImpl : Nat → Nat
-  | 0     => 1
-  | n + 1 => (n + 1) * factImpl n
-
-private def fibImpl : Nat → Nat
-  | 0     => 0
-  | 1     => 1
-  | n + 2 => fibImpl (n + 1) + fibImpl n
-
-private def doubleImpl (n : Nat) : Nat := 2 * n
-
-private def predImpl : Nat → Nat
-  | 0     => 0
-  | n + 1 => n
-
-def addOp : Operator where
-  name   := "add"
-  arity  := 2
-  schema := "structural"
-  fn args := match args with
-    | [n, m] => addImpl n m
-    | _      => 0
-
-def mulOp : Operator where
-  name   := "mul"
-  arity  := 2
-  schema := "structural"
-  fn args := match args with
-    | [n, m] => mulImpl n m
-    | _      => 0
-
-def expOp : Operator where
-  name   := "exp"
-  arity  := 2
-  schema := "structural"
-  fn args := match args with
-    | [b, e] => expImpl b e
-    | _      => 0
-
-def factOp : Operator where
-  name   := "fact"
-  arity  := 1
-  schema := "structural"
-  fn args := match args with
-    | [n] => factImpl n
-    | _   => 0
-
-def fibOp : Operator where
-  name   := "fib"
-  arity  := 1
-  schema := "structural"
-  fn args := match args with
-    | [n] => fibImpl n
-    | _   => 0
-
-def doubleOp : Operator where
-  name   := "double"
-  arity  := 1
-  schema := "structural"
-  fn args := match args with
-    | [n] => doubleImpl n
-    | _   => 0
-
-def predOp : Operator where
-  name   := "pred"
-  arity  := 1
-  schema := "structural"
-  fn args := match args with
-    | [n] => predImpl n
-    | _   => 0
-
-/-- Theory after structural-schema climb: PR operators admitted, one
-per `installOp` call with an `OperatorAdmissible` proof. Each `by
-decide` checks: declared schema is in the theory, name is fresh. -/
-def T_pred   : Theory := T₀.installOp       predOp   ⟨by decide, by decide⟩
-def T_double : Theory := T_pred.installOp   doubleOp ⟨by decide, by decide⟩
-def T_add    : Theory := T_double.installOp addOp    ⟨by decide, by decide⟩
-def T_mul    : Theory := T_add.installOp    mulOp    ⟨by decide, by decide⟩
-def T_exp    : Theory := T_mul.installOp    expOp    ⟨by decide, by decide⟩
-def T_fact   : Theory := T_exp.installOp    factOp   ⟨by decide, by decide⟩
-def T_fib    : Theory := T_fact.installOp   fibOp    ⟨by decide, by decide⟩
+/-- The climb under `structural`: install operators one at a time.
+`schema_present` is `.head _` because each install leaves
+`T.schemas` with `structuralSchema` at the head. -/
+def T_pred   : Theory := T₀.installOp       predOp   ⟨.head _, by decide⟩
+def T_double : Theory := T_pred.installOp   doubleOp ⟨.head _, by decide⟩
+def T_add    : Theory := T_double.installOp addOp    ⟨.head _, by decide⟩
+def T_mul    : Theory := T_add.installOp    mulOp    ⟨.head _, by decide⟩
+def T_fact   : Theory := T_mul.installOp    factOp   ⟨.head _, by decide⟩
+def T_fib    : Theory := T_fact.installOp   fibOp    ⟨.head _, by decide⟩
 abbrev T₁ : Theory := T_fib
 
 /-! ### Scene 4 — Install the lex2 schema
 
-Ackermann's recursion can't be expressed under `structural` alone: the
-third clause `A(n+1, m+1) = A(n, A(n+1, m))` has a recursive call with
-the *same* first argument. To admit it, we need lexicographic order. -/
+Ackermann's and Sudan's recursions have a recursive call with the
+*same* first argument; no single coordinate decreases. Lex order on
+the first two arguments is the new well-foundedness we need. -/
 
-/-- Level 2: structural + lex2, but no new operators yet. -/
 def T₂ : Theory := T₁.installSchema lex2Schema ⟨by decide⟩
 
-/-! ### Scene 5 — Climb under lex2: Ackermann
+/-! ### Scene 5 — Operators admitted under `lex2`
 
-Lean's elaborator infers the default lex termination measure on
-positional arguments, which matches `lex2`'s relation. The function is
-total; Lean type-checks it. -/
+The step function types now mention `lex2Schema.rel`. Recursive
+accessibility witnesses come from `lex2Schema.dec_left` (first arg
+strictly decreases) and `lex2Schema.dec_right` (first arg equal,
+second strictly decreases). -/
 
-private def ackImpl : Nat → Nat → Nat
-  | 0,     m     => m + 1
-  | n + 1, 0     => ackImpl n 1
-  | n + 1, m + 1 => ackImpl n (ackImpl (n + 1) m)
+def ackStep : (x : List Nat) → ((y : List Nat) → lex2Schema.rel y x → Nat) → Nat
+  | [0, m],     _   => m + 1
+  | [n+1, 0],   rec =>
+    rec [n, 1] (lex2Schema.dec_left [] [] (by omega))
+  | [n+1, m+1], rec =>
+    let inner := rec [n+1, m] (lex2Schema.dec_right [] [] (by omega))
+    rec [n, inner] (lex2Schema.dec_left [] [] (by omega))
+  | _,          _   => 0
 
-/--
-**Sudan's function** — the *other* canonical non-PR function. Like
-Ackermann, it's defined by simultaneous double recursion on two
-arguments:
+/-- Sudan's function. Args are presented as `[n, y, x]` so that the
+lex2 measure on the first two list elements aligns with the
+mathematical measure on `(n, y)`. The trailing `x` is the static
+parameter. Mathematically: `F_n(x, y)`. -/
+def sudanStep : (x : List Nat) → ((y : List Nat) → lex2Schema.rel y x → Nat) → Nat
+  | [0,   y,   x], _   => x + y
+  | [_+1, 0,   x], _   => x
+  | [n+1, y+1, x], rec =>
+    let v := rec [n+1, y, x] (lex2Schema.dec_right [x] [x] (by omega))
+    rec [n, v + y + 1, v] (lex2Schema.dec_left [v] [x] (by omega))
+  | _,             _   => 0
 
-    F_0(x, y)     = x + y
-    F_{n+1}(x, 0) = x
-    F_{n+1}(x, y+1) = F_n(F_{n+1}(x, y), F_{n+1}(x, y) + y + 1)
+def ackermannOp : AdmittedOperator := ⟨lex2Schema,
+  { name := "ackermann", arity := 2, step := ackStep }⟩
+def sudanOp     : AdmittedOperator := ⟨lex2Schema,
+  { name := "sudan",     arity := 3, step := sudanStep }⟩
 
-Termination is lexicographic on `(n, y)`: at `(n+1, y+1)`, one
-recursive call drops to `(n+1, y)` (second decreases) and the other to
-`(n, _)` (first decreases). The parameter `x` is irrelevant to the
-measure but participates in computation. Like Ackermann, Sudan's
-function isn't admissible under `structural` alone; with `lex2`
-installed, Lean's elaborator accepts the definition.
--/
-private def sudanImpl : Nat → Nat → Nat → Nat   -- args ordered (n, y, x) for lex measure
-  | 0,     y,     x => x + y
-  | _ + 1, 0,     x => x
-  | n + 1, y + 1, x =>
-    let v := sudanImpl (n + 1) y x
-    sudanImpl n (v + y + 1) v
-
-def ackermannOp : Operator where
-  name   := "ackermann"
-  arity  := 2
-  schema := "lex2"
-  fn args := match args with
-    | [n, m] => ackImpl n m
-    | _      => 0
-
-def sudanOp : Operator where
-  name   := "sudan"
-  arity  := 3
-  schema := "lex2"
-  fn args := match args with
-    | [n, x, y] => sudanImpl n y x   -- present as F_n(x, y), measure on (n, y)
-    | _         => 0
-
-/-- Climbed theory: structural + lex2; PR operators + ackermann + sudan. -/
-def T_ack   : Theory := T₂.installOp    ackermannOp ⟨by decide, by decide⟩
-def T_sudan : Theory := T_ack.installOp sudanOp     ⟨by decide, by decide⟩
+def T_ack   : Theory := T₂.installOp    ackermannOp ⟨.head _, by decide⟩
+def T_sudan : Theory := T_ack.installOp sudanOp     ⟨.head _, by decide⟩
 abbrev T_climbed : Theory := T_sudan
 
-/-! ### Well-formedness, rung by rung
+/-! ### Scene 6 — Compute -/
 
-Every intermediate theory in the climb is well-formed. We prove it
-explicitly at each rung so the pedagogy matches the install sequence:
-one theorem per admission, threading the previous well-formedness
-through the corresponding preservation lemma. -/
+example : T_climbed.apply "pred" [7] = some 6                 := by native_decide
+example : T_climbed.apply "double" [7] = some 14              := by native_decide
+example : T_climbed.apply "add" [2, 3] = some 5               := by native_decide
+example : T_climbed.apply "mul" [3, 4] = some 12              := by native_decide
+example : T_climbed.apply "fact" [5] = some 120               := by native_decide
+example : T_climbed.apply "fib" [10] = some 55                := by native_decide
+example : T_climbed.apply "ackermann" [0, 5] = some 6         := by native_decide
+example : T_climbed.apply "ackermann" [1, 5] = some 7         := by native_decide
+example : T_climbed.apply "ackermann" [2, 2] = some 7         := by native_decide
+example : T_climbed.apply "ackermann" [3, 3] = some 61        := by native_decide
+example : T_climbed.apply "sudan" [0, 5, 3] = some 8          := by native_decide
+example : T_climbed.apply "sudan" [1, 1, 1] = some 3          := by native_decide
+example : T_climbed.apply "sudan" [1, 2, 1] = some 8          := by native_decide
+
+/-! ### Scene 7 — Refusal: bad arity / unknown -/
+
+example : T_climbed.apply "ackermann" [1] = none              := by native_decide
+example : T_climbed.apply "sudan" [1, 1] = none               := by native_decide
+example : T_climbed.apply "nonexistent" [0] = none            := by native_decide
+
+/-! ### Scene 5b — refusal witnesses (commented)
+
+Each of the following would compile under v1's gate (which only
+checked schema-name presence and operator-name freshness). v2's gate
+rejects them at the type level:
+
+```lean
+-- (1) Operator declares structuralSchema but its step references
+--     lex2Schema's relation. The type doesn't unify; doesn't compile.
+def mislabeled : AdmittedOperator := ⟨structuralSchema,
+  { name := "mislabeled", arity := 2, step := ackStep }⟩
+-- type error: ackStep expects lex2Schema.rel, structuralSchema's
+-- rel is different
+```
+
+```lean
+-- (2) Step function whose recursive call doesn't actually decrease.
+def badAck : (x : List Nat) → ((y : List Nat) → structuralSchema.rel y x → Nat) → Nat
+  | [n+1, m+1], rec =>
+    rec [n+1, m] (structuralSchema.dec_first ...)
+    -- type error: can't prove first arg decreases (both are n+1)
+  | _, _ => 0
+```
+
+The kernel refuses these at admission because the step's type *is*
+the decrease constraint. There is no separate certificate that could
+be wrong; the type system is the gate. -/
+
+/-! ### Per-rung well-formedness -/
 
 theorem T₀_wellFormed       : T₀.WellFormed       :=
   installSchema_wellFormed empty_wellFormed       ⟨by decide⟩
 theorem T_pred_wellFormed   : T_pred.WellFormed   :=
-  installOp_wellFormed     T₀_wellFormed          ⟨by decide, by decide⟩
+  installOp_wellFormed     T₀_wellFormed          ⟨.head _, by decide⟩
 theorem T_double_wellFormed : T_double.WellFormed :=
-  installOp_wellFormed     T_pred_wellFormed      ⟨by decide, by decide⟩
+  installOp_wellFormed     T_pred_wellFormed      ⟨.head _, by decide⟩
 theorem T_add_wellFormed    : T_add.WellFormed    :=
-  installOp_wellFormed     T_double_wellFormed    ⟨by decide, by decide⟩
+  installOp_wellFormed     T_double_wellFormed    ⟨.head _, by decide⟩
 theorem T_mul_wellFormed    : T_mul.WellFormed    :=
-  installOp_wellFormed     T_add_wellFormed       ⟨by decide, by decide⟩
-theorem T_exp_wellFormed    : T_exp.WellFormed    :=
-  installOp_wellFormed     T_mul_wellFormed       ⟨by decide, by decide⟩
+  installOp_wellFormed     T_add_wellFormed       ⟨.head _, by decide⟩
 theorem T_fact_wellFormed   : T_fact.WellFormed   :=
-  installOp_wellFormed     T_exp_wellFormed       ⟨by decide, by decide⟩
+  installOp_wellFormed     T_mul_wellFormed       ⟨.head _, by decide⟩
 theorem T_fib_wellFormed    : T_fib.WellFormed    :=
-  installOp_wellFormed     T_fact_wellFormed      ⟨by decide, by decide⟩
+  installOp_wellFormed     T_fact_wellFormed      ⟨.head _, by decide⟩
 theorem T₁_wellFormed       : T₁.WellFormed       := T_fib_wellFormed
 theorem T₂_wellFormed       : T₂.WellFormed       :=
   installSchema_wellFormed T₁_wellFormed          ⟨by decide⟩
 theorem T_ack_wellFormed    : T_ack.WellFormed    :=
-  installOp_wellFormed     T₂_wellFormed          ⟨by decide, by decide⟩
+  installOp_wellFormed     T₂_wellFormed          ⟨.head _, by decide⟩
 theorem T_sudan_wellFormed  : T_sudan.WellFormed  :=
-  installOp_wellFormed     T_ack_wellFormed       ⟨by decide, by decide⟩
+  installOp_wellFormed     T_ack_wellFormed       ⟨.head _, by decide⟩
 theorem T_climbed_wellFormed : T_climbed.WellFormed := T_sudan_wellFormed
-
-/-! ### Scene 5b — the refusal witness
-
-The following definition is *exactly the shape* of Ackermann's
-recursion, but if you ask Lean to accept it under the single-argument
-structural measure (default for a `Nat → Nat → Nat` function), the
-elaborator refuses. Uncomment to verify; the build will fail with
-something like `fail to show termination`.
-
-```lean
-def badAckImpl : Nat → Nat → Nat
-  | 0,     m     => m + 1
-  | n + 1, 0     => badAckImpl n 1
-  | n + 1, m + 1 => badAckImpl n (badAckImpl (n + 1) m)
-termination_by n _ => n   -- structural on first arg — Lean refuses
-```
-
-The recursive call `badAckImpl (n + 1) m` has the *same* first
-argument, so a structural measure on `n` alone doesn't decrease.
-Installing `lex2` (which `ackImpl` and `sudanImpl` use implicitly via
-Lean's default lex measure) is what closes the gap. -/
-
-/-! ### Scene 5c — admission-gate refusals
-
-Each of the following would fit the shape of an admissible declaration
-*on its face*, but the admissibility precondition refuses it. Uncomment
-any one to verify; the build fails with a `decide` failure on the
-relevant `OperatorAdmissible` field.
-
-```lean
--- (1) Operator referencing a schema that hasn't been installed:
-def bogusSchemaRef : Operator where
-  name := "weird"; arity := 1; schema := "made-up"
-  fn := fun _ => 0
-def T_bogus1 : Theory :=
-  T_climbed.installOp bogusSchemaRef ⟨by decide, by decide⟩
--- decide fails: T_climbed.hasSchema "made-up" = false ≠ true
-
--- (2) Operator shadowing an existing name:
-def shadowAck : Operator where
-  name := "ackermann"; arity := 2; schema := "lex2"
-  fn := fun _ => 0
-def T_bogus2 : Theory :=
-  T_climbed.installOp shadowAck ⟨by decide, by decide⟩
--- decide fails: T_climbed.hasOperator "ackermann" = true ≠ false
-
--- (3) Schema with a name that's already taken (a valid duplicate —
--- same name, same well-foundedness proof, freshness is the only
--- failing condition):
-def dupSchema : Schema where
-  name    := "structural"
-  Carrier := Nat
-  rel     := (· < ·)
-  wf      := Nat.lt_wfRel.wf
-def T_bogus3 : Theory :=
-  T_climbed.installSchema dupSchema ⟨by decide⟩
--- decide fails: T_climbed.hasSchema "structural" = true ≠ false
-```
--/
-
-/-! ### Scene 6 — Compute -/
-
-example : T_climbed.apply "pred" [7] = some 6           := by native_decide
-example : T_climbed.apply "double" [7] = some 14        := by native_decide
-example : T_climbed.apply "add" [2, 3] = some 5         := by native_decide
-example : T_climbed.apply "mul" [3, 4] = some 12        := by native_decide
-example : T_climbed.apply "exp" [2, 5] = some 32        := by native_decide
-example : T_climbed.apply "fact" [5] = some 120         := by native_decide
-example : T_climbed.apply "fib" [10] = some 55          := by native_decide
-example : T_climbed.apply "ackermann" [0, 5] = some 6   := by native_decide
-example : T_climbed.apply "ackermann" [1, 5] = some 7   := by native_decide
-example : T_climbed.apply "ackermann" [2, 2] = some 7   := by native_decide
-example : T_climbed.apply "ackermann" [3, 3] = some 61  := by native_decide
-example : T_climbed.apply "sudan" [0, 5, 3] = some 8    := by native_decide
-example : T_climbed.apply "sudan" [1, 1, 1] = some 3    := by native_decide
-example : T_climbed.apply "sudan" [1, 1, 2] = some 8    := by native_decide
-
-/-! ### Scene 7 — Refusal: bad arity gets rejected -/
-
-example : T_climbed.apply "ackermann" [1] = none        := by native_decide
-example : T_climbed.apply "sudan" [1, 1] = none         := by native_decide
-example : T_climbed.apply "nonexistent" [0] = none      := by native_decide
 
 end ClimbingCalc

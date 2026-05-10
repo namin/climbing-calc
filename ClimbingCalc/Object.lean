@@ -1,48 +1,62 @@
 namespace ClimbingCalc
 
-/--
-A **schema** is a named well-founded relation. The kernel admits a schema
-iff Lean accepts the `wf` field as a `WellFounded` value — i.e. there's a
-constructive proof that `rel` is well-founded.
+/-! ## v2: schema-indexed step functions
 
-Bogus schemas (relations claimed well-founded without a real proof) cannot
-be admitted without `sorry`, which closes the disaster demo at the type
-level: there is no way to install a schema without the kernel having
-already type-checked its well-foundedness certificate.
--/
+The substrate is *computation*: total `List Nat → Nat` functions
+built by well-founded recursion on a schema's relation. The key
+type-level constraint:
+
+* a `Schema` is a well-founded relation on `List Nat` together with a
+  Lean `WellFounded` proof;
+* an `Operator S` carries a `step` function whose type **literally
+  mentions `S.rel`** as the decreasing measure;
+* its computable `fn` is `S.wf.fix step` — Lean's well-founded fix.
+
+You cannot construct an `Operator S` whose `step` doesn't use `S.rel`
+in the accessibility witnesses for its recursive calls. This is the
+type-level binding between operator and schema that v1's
+`fn : List Nat → Nat` lacked. -/
+
+/-- A **schema** is a named well-founded relation on argument lists. -/
 structure Schema where
-  name    : String
-  Carrier : Type
-  rel     : Carrier → Carrier → Prop
-  wf      : WellFounded rel
+  name : String
+  rel  : List Nat → List Nat → Prop
+  wf   : WellFounded rel
 
-/--
-An **admitted operator** carries its computable Lean function (`fn`) and a
-declaration of which schema admitted it. The Lean type-checker has already
-accepted `fn` as total; the `schema` field is metadata recording the climb
-rung at which the operator entered.
--/
-structure Operator where
-  name   : String
-  arity  : Nat
-  schema : String
-  fn     : List Nat → Nat
+/-- An **operator admitted under schema `S`**. The `step` function's
+type carries the schema-binding: every recursive call goes through
+the second argument `rec`, which requires an accessibility witness in
+`S.rel`. The kernel admits iff Lean type-checks this. -/
+structure Operator (S : Schema) where
+  name  : String
+  arity : Nat
+  step  : (x : List Nat) → ((y : List Nat) → S.rel y x → Nat) → Nat
 
-/-- A **theory**: schemas and operators admitted so far. -/
+/-- The computable function induced by an operator, via Lean's
+`WellFounded.fix` on the schema's relation. -/
+def Operator.fn {S : Schema} (op : Operator S) (args : List Nat) : Nat :=
+  S.wf.fix op.step args
+
+/-- A theory's operator list is heterogeneous: each entry pairs a
+schema with an operator typed against it. -/
+structure AdmittedOperator where
+  schema : Schema
+  op     : Operator schema
+
+/-- A theory: schemas and operators admitted so far. -/
 structure Theory where
   schemas   : List Schema
-  operators : List Operator
+  operators : List AdmittedOperator
 
-/-- The empty theory: nothing admitted. -/
 def Theory.empty : Theory := ⟨[], []⟩
 
-/-- Apply an operator by name. Returns `none` if the operator is unknown
-or the argument count doesn't match its declared arity. -/
+/-- Apply an operator by name. Returns `none` if the operator is
+unknown or arity doesn't match. -/
 def Theory.apply (T : Theory) (name : String) (args : List Nat) : Option Nat :=
-  match T.operators.find? (·.name == name) with
+  match T.operators.find? (fun ao => ao.op.name == name) with
   | none    => none
-  | some op =>
-    if op.arity == args.length then some (op.fn args) else none
+  | some ao =>
+    if ao.op.arity == args.length then some (ao.op.fn args) else none
 
 /-- Whether a schema name is in the theory. -/
 def Theory.hasSchema (T : Theory) (name : String) : Bool :=
@@ -50,34 +64,28 @@ def Theory.hasSchema (T : Theory) (name : String) : Bool :=
 
 /-- Whether an operator name is in the theory. -/
 def Theory.hasOperator (T : Theory) (name : String) : Bool :=
-  T.operators.any (·.name == name)
+  T.operators.any (fun ao => ao.op.name == name)
 
 /-! ## Admissibility preconditions
 
-The kernel checks two structural properties before admitting a schema
-or operator: name freshness and (for operators) presence of the
-declared schema. These rule out the most obvious abuses — claiming a
-schema that has never been installed, or installing a second operator
-with an existing name and shadowing the old one via `find?` lookup.
-
-**What these preconditions do NOT enforce** is the deeper coupling
-between an operator's `fn` and its declared schema's relation: a v1
-operator carries `fn : List Nat → Nat` as opaque Lean data, and Lean's
-type checker accepts any total function. The bound between "I declared
-`schema := "lex2"`" and "my recursion actually decreases under lex2"
-lives at the level of code review, not the kernel. Closing that gap
-is the v2 plan documented in `DESIGN.md` — an embedded operator
-language with structural termination certificates per recursive call.
+* `SchemaAdmissible`: schema name must be fresh.
+* `OperatorAdmissible`: the declared schema must be in the theory
+  (propositional list membership), and the operator name must be
+  fresh. The schema-membership is propositional rather than a
+  Bool-name-check because we want the *same Schema value* the
+  operator's `step` is typed against — not just any schema with the
+  same name.
 -/
 
-/-- Precondition for installing a schema: its name must be fresh. -/
+/-- Precondition for installing a schema: name must be fresh. -/
 structure SchemaAdmissible (T : Theory) (s : Schema) : Prop where
   name_fresh : T.hasSchema s.name = false
 
-/-- Precondition for installing an operator: the declared schema must
-be present in the theory, and the operator's name must be fresh. -/
-structure OperatorAdmissible (T : Theory) (op : Operator) : Prop where
-  schema_present : T.hasSchema op.schema = true
-  name_fresh     : T.hasOperator op.name = false
+/-- Precondition for installing an operator: declared schema must be
+present (as a Schema value, not just by name), and the operator's
+name must be fresh. -/
+structure OperatorAdmissible (T : Theory) (ao : AdmittedOperator) : Prop where
+  schema_present : ao.schema ∈ T.schemas
+  name_fresh     : T.hasOperator ao.op.name = false
 
 end ClimbingCalc

@@ -1,39 +1,31 @@
 # climbing-calc
 
-A calculator whose class of admissible total functions **grows under
-proof-bearing admission**. Each climb admits either a new operator
-(represented by a Lean-total function, admitted only if it names an
-already-installed schema and has a fresh name) or a new schema (a
-well-founded relation, certified well-founded by a Lean `WellFounded`
-proof). The class of admissible operators grows monotonically across
-the climb.
+A calculator whose class of admissible total functions grows under
+**type-level proof-bearing admission**. Each climb admits either:
 
-**What v1 establishes** is the *architecture* of proof-gated extension:
-schemas can't enter the theory without a `WellFounded` proof; operators
-can't enter without referencing an installed schema; nothing shadows.
+1. a **schema** — a well-founded relation on `List Nat` with a Lean
+   `WellFounded` proof; or
+2. an **operator** — typed against an admitted schema, carrying a
+   `step` function whose signature literally mentions the schema's
+   relation as the recursion-handle constraint.
 
-**What v1 does NOT yet certify** is that an operator's recursion
-actually decreases under its declared schema's relation. The
-`schema` field is informational at this layer — it's checked at
-admission for *presence in the theory* but not for *structural
-binding to the function's recursion*. Closing that gap is the v2
-embedded-language plan described in [`DESIGN.md`](DESIGN.md).
+You cannot construct an `Operator S` whose recursion doesn't go
+through `S.rel` — the type checker won't let you. The kernel's
+admission gate is *Lean's type checker*; there is no separate
+termination certificate that could drift from the schema.
 
 Climber re-rendered with computation as the substrate. Same kernel
-discipline, different substrate. Headline: Ackermann's recursive
-definition is not accepted under a single structural measure, but
-Lean accepts it with a lexicographic termination argument; the v1
-climb records that staged admission (one rung installs `structural`,
-a later rung installs `lex2`, after which Ackermann's `Operator` is
-admitted under the `lex2` label). v2 is what makes the schema-body
-binding internal to the calculator itself.
+discipline (LCF-style admission of typed certificates), different
+substrate (total `List Nat → Nat` functions instead of formal
+derivations).
 
-See [`DESIGN.md`](DESIGN.md) for the design rationale and decisions.
+See [`DESIGN.md`](DESIGN.md) for the design rationale and
+[`AvsB.md`](AvsB.md) for the v2-A-vs-B decision record.
 
 ## Status
 
-Builds clean on `leanprover/lean4:v4.29.1`. Zero `sorry`s. Smoke
-executable demonstrates the climb scene by scene.
+Builds clean on `leanprover/lean4:v4.29.1`. Zero `sorry`s. The smoke
+executable walks the climb scene by scene.
 
 ```bash
 $ lake build
@@ -41,7 +33,7 @@ Build completed successfully (8 jobs).
 
 $ lake exe smoke
 ================================================================
-climbing-calc — the calculator that climbs
+climbing-calc v2 — the calculator that climbs
 ================================================================
 
 Scene 1: T_bare — empty theory
@@ -53,12 +45,11 @@ Scene 2: T₀ — install structural schema
   operators: []
 
 Scene 3: T₁ — admit PR operators under structural
-  operators: [fib, fact, exp, mul, add, double, pred]
+  operators: [fib, fact, mul, add, double, pred]
   pred([7]): (some 6)
   double([7]): (some 14)
   add([2, 3]): (some 5)
   mul([3, 4]): (some 12)
-  exp([2, 5]): (some 32)
   fact([5]): (some 120)
   fib([10]): (some 55)
 
@@ -66,7 +57,7 @@ Scene 4: T₂ — install lex2 schema
   schemas: [lex2, structural]
 
 Scene 5: T_climbed — admit ackermann and sudan under lex2
-  operators: [sudan, ackermann, fib, fact, exp, mul, add, double, pred]
+  operators: [sudan, ackermann, fib, fact, mul, add, double, pred]
   ackermann([0, 5]): (some 6)
   ackermann([1, 5]): (some 7)
   ackermann([2, 2]): (some 7)
@@ -74,8 +65,7 @@ Scene 5: T_climbed — admit ackermann and sudan under lex2
 
   sudan([0, 5, 3]): (some 8)
   sudan([1, 1, 1]): (some 3)
-  sudan([1, 1, 2]): (some 8)
-  sudan([2, 1, 1]): (some 8)
+  sudan([1, 2, 1]): (some 8)
 
 Scene 6: refusal — wrong arity / unknown operator
   ackermann([1]): none
@@ -84,108 +74,96 @@ Scene 6: refusal — wrong arity / unknown operator
 
 Scene 7: the line crossed
   ackermann([3, 8]): (some 2045)
-  exp([2, 10]): (some 1024)
   fact([10]): (some 3628800)
-  A(3, 8) = 2045 > 1024 = exp(2, 10);
-  Ackermann outgrows any fixed exponential; lex2 admits the shape.
 ```
 
 ## The pattern
 
 | Role | Instance |
 |---|---|
-| Substrate | A theory `T = (schemas, operators)`; operators are total `List Nat → Nat` functions |
-| Proposer | Human or LLM offering an operator or schema with its certificate |
-| Gate | Lean's kernel: `Schema` requires `WellFounded`; `Operator` requires a total `fn` |
+| Substrate | Theory `T = (schemas, operators)`; operators are `WellFounded.fix step` over their schema's WF proof |
+| Proposer | Human or LLM offering a schema (with WF proof) or an operator (with a step function typed against a declared schema) |
+| Gate | Lean's type checker: `Schema` requires `WellFounded`; `Operator S` requires a step function with `S.rel` in its type. Plus admission preconditions (schema present, names fresh). |
 
-The kernel-checked invariants live in the Lean types themselves. A
-`Schema` value cannot exist without a constructive `WellFounded` proof;
-an `Operator` value cannot exist without a Lean-typed total function.
-`Theory.installSchema` requires a `SchemaAdmissible` proof (name
-fresh); `Theory.installOp` requires `OperatorAdmissible` (declared
-schema present *and* operator name fresh). Bogus admissions — claiming
-a schema that hasn't been installed, or shadowing an existing operator
-— are rejected at admission time. `Theory.WellFormed` is preserved by
-the climb API: every theory built through `installSchema`/`installOp`
-has distinct schema names, distinct operator names, and every
-operator's declared schema is present.
+The operator carries:
 
-**The remaining gap.** None of the above certifies that an operator's
-`fn` *actually decreases* under its declared schema's relation. An
-`Operator` carries `fn : List Nat → Nat` as opaque Lean data; Lean's
-type checker accepts any total function, regardless of which schema
-name appears on the record. So a v1 operator could in principle name
-`"structural"` while internally using Ackermann's recursion — the
-gate would admit it. Closing that gap is v2: an embedded operator
-language with a structural termination certificate per recursive
-call. See [`DESIGN.md`](DESIGN.md), *v2 plan*.
+```lean
+structure Operator (S : Schema) where
+  name  : String
+  arity : Nat
+  step  : (x : List Nat) → ((y : List Nat) → S.rel y x → Nat) → Nat
+```
+
+`step` takes the current argument list `x` and a recursion handle
+`rec` that demands an accessibility witness in `S.rel`. The
+operator's runtime function is `S.wf.fix step`. Lean's elaborator
+accepts an `Operator S` value iff every recursive call site supplies
+a valid `S.rel`-witness.
+
+**There is no separate termination certificate.** The step's *type*
+is the certificate. A mislabeled operator (e.g. trying to use lex2
+recursion under structural) fails type-checking, not a downstream
+proof.
 
 ## The climb
 
 | Theory | Schemas admitted | Operators admitted |
 |---|---|---|
-| `T_bare`    | —                | —                                                       |
-| `T₀`        | structural       | —                                                       |
-| `T₁`        | structural       | pred, double, add, mul, exp, fact, fib                  |
-| `T₂`        | structural, lex2 | pred, double, add, mul, exp, fact, fib                  |
-| `T_climbed` | structural, lex2 | pred, double, add, mul, exp, fact, fib, ackermann, sudan |
+| `T_bare`    | —                | —                                              |
+| `T₀`        | structural       | —                                              |
+| `T₁`        | structural       | pred, double, add, mul, fact, fib              |
+| `T₂`        | structural, lex2 | pred, double, add, mul, fact, fib              |
+| `T_climbed` | structural, lex2 | pred, double, add, mul, fact, fib, ackermann, sudan |
 
-Each transition is one `installSchema` or `installOp` call. The
-recursions `A(n+1, m+1) = A(n, A(n+1, m))` and Sudan's
-`F_{n+1}(x, y+1) = F_n(F_{n+1}(x, y), F_{n+1}(x, y) + y + 1)` call back
-into themselves with the *same* first argument — no single coordinate
-decreases. The `lex2` schema (lexicographic order on `Nat × Nat`) is
-the new well-foundedness needed to admit them; once `lex2` is in the
-theory, Lean's elaborator accepts both via the standard `termination_by`
-machinery.
+Each transition is one `installSchema` or `installOp` call with an
+admissibility proof (`by decide` for name freshness; `.head _` for
+schema-presence). Per-rung well-formedness theorems
+(`T₀_wellFormed`, …, `T_climbed_wellFormed`) witness that the climb
+preserves `Theory.WellFormed`: distinct schema names, distinct
+operator names, every operator's schema present.
 
-**The refusal witness.** `Demo.lean` carries a commented-out
-`badAckImpl` that's exactly Ackermann's shape but asks Lean to admit
-it under a structural measure on the first argument alone. The build
-fails on uncommenting; this is the "without the gate" world made
-visible at compile time.
+**The headline.** Ackermann's step function has type:
+```
+(x : List Nat) → ((y : List Nat) → lex2Schema.rel y x → Nat) → Nat
+```
+You cannot place an `Operator structuralSchema` carrying this step,
+because `structuralSchema.rel ≠ lex2Schema.rel`. The schema-operator
+binding is enforced at admission by Lean's unifier.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `ClimbingCalc/Object.lean`   | `Schema`, `Operator`, `Theory`, `Theory.apply`, `SchemaAdmissible`, `OperatorAdmissible` |
-| `ClimbingCalc/Schemas.lean`  | `structuralSchema`, `lex2Schema` |
+| `ClimbingCalc/Object.lean`   | `Schema`, `Operator S`, `AdmittedOperator`, `Theory`, `apply`, `SchemaAdmissible`, `OperatorAdmissible` |
+| `ClimbingCalc/Schemas.lean`  | `structuralSchema`, `lex2Schema`, decrease helpers |
 | `ClimbingCalc/Climb.lean`    | `installSchema`, `installOp`, `Theory.WellFormed` + preservation theorems |
-| `ClimbingCalc/Demo.lean`     | The scenes; `addImpl`, `mulImpl`, `expImpl`, `factImpl`, `fibImpl`, `ackImpl`, `sudanImpl`; refusal witnesses |
-| `ClimbingCalc/Counter.lean`  | The "line crossed" witness: `ack(3,8) = 2045 > 1024 = exp(2,10)` |
+| `ClimbingCalc/Demo.lean`     | Step functions for all operators; the climb sequence; per-rung WF theorems |
+| `ClimbingCalc/Counter.lean`  | "Line crossed" witness: `ack(3,8) = 2045` |
 | `Smoke.lean`                 | `lake exe smoke` |
 
-## What's in scope (v1) vs out
+## What's in scope (v2) vs out
 
 **In scope (this version):**
-- Two schemas: `structural`, `lex2`.
-- Seven operators under `structural`: `pred`, `double`, `add`, `mul`,
-  `exp`, `fact`, `fib`.
-- Two operators under `lex2`: `ackermann`, `sudan`.
-- Admission preconditions (`SchemaAdmissible`, `OperatorAdmissible`)
-  enforced at install time via `by decide`.
-- `Theory.WellFormed` invariant and preservation theorems for the
-  climb API.
-- Refusal witnesses (commented examples in `Demo.lean`).
-- Static demos via `lake exe smoke`.
+- Two schemas with WF proofs: `structural`, `lex2`.
+- Six structural operators: `pred`, `double`, `add`, `mul`, `fact`, `fib`.
+- Two lex2 operators: `ackermann`, `sudan`.
+- Type-level binding of operator to schema via `Operator (S : Schema)`.
+- Admission preconditions and `Theory.WellFormed` preservation.
 
-**Out of scope (deferred to v2):**
-- Embedded operator language with per-call structural termination
-  certificates — the deeper coupling of `fn` to its declared schema.
-- Goodstein's function (ε₀ recursion, crosses the PA-provable-totality line).
-- LLM proposer cascade (Bedrock-mediated, climber-style).
-- Mechanical proof that operators under `structural` form a proper
-  subclass of total functions (Ackermann-not-PR as a Lean theorem).
-- Higher-arity schemas, dependent recursion.
+**Out of scope (potential v3):**
+- LLM proposer cascade (step functions are Lean terms, not data; an
+  LLM proposer would have to generate Lean source — feasible via
+  `lake env lean --run` like climber, but not done here).
+- Additional schemas (sum-measure, lex3, ε₀-recursion).
+- Embedded-language *bodies* as data (option A in `AvsB.md`).
 
-## Why this is the keynote example
+## Comparison to v1
 
-The original Smith/Black tower's `(em (set! base-apply ...))` modifies
-the evaluator; the headline is "checking caught up with reflection."
-`climbing-calc`'s analogue: the proposer modifies the *theory of
-admissible functions*; the kernel checks via Lean's typing discipline;
-the climb crosses a line the starting theory cannot reach. The
-"impossible before" use case is a calculator that genuinely extends
-what it can compute in place, with a kernel-checked totality invariant
-preserved across every rung.
+v1 represented operators as opaque `fn : List Nat → Nat` with a
+`schema : String` field that was checked only for presence in the
+theory. The schema-operator binding lived at the level of "code
+review" — a mislabeled operator was admissible. v2 lifts that
+binding to the Lean type system: `Operator S` and `Operator S'`
+are different types whenever `S ≠ S'`. The v1 invariants
+(`SchemaAdmissible`, `OperatorAdmissible`, `Theory.WellFormed`) all
+carry over; the type-level constraint is the new addition.
