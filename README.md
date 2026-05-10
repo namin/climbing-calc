@@ -20,9 +20,13 @@ binding to the function's recursion*. Closing that gap is the v2
 embedded-language plan described in [`DESIGN.md`](DESIGN.md).
 
 Climber re-rendered with computation as the substrate. Same kernel
-discipline, different substrate, headline crosses a *computational*
-unreachable line: Ackermann is not admissible under structural
-recursion alone, but admits after the `lex2` schema is installed.
+discipline, different substrate. Headline: Ackermann's recursive
+definition is not accepted under a single structural measure, but
+Lean accepts it with a lexicographic termination argument; the v1
+climb records that staged admission (one rung installs `structural`,
+a later rung installs `lex2`, after which Ackermann's `Operator` is
+admitted under the `lex2` label). v2 is what makes the schema-body
+binding internal to the calculator itself.
 
 See [`DESIGN.md`](DESIGN.md) for the design rationale and decisions.
 

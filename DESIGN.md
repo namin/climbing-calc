@@ -51,172 +51,161 @@ without transfinite recursion; etc.
 | Gate (v1, shipped) | Kernel checks: schema's `WellFounded` proof type-checks; operator's `fn` is Lean-typed total; admission preconditions hold (schema present, names fresh) |
 | Gate (v2, target) | Additionally: operator's recursive calls in its body decrease under the admitted schema's relation (requires embedded-language substrate) |
 
-## Decisions to make
+## Design decisions: v1 shipped vs v2 target
+
+Each subsection records the decision made, the v1 outcome, and (where
+relevant) what was deferred to v2. The subsections originally framed
+these as forks to choose between; that framing is preserved for
+historical context.
 
 ### D1. Level 0: bare or PR built-in?
 
-- **A. Bare.** Level 0 has only `zero` and `succ`. No schemas admitted.
-  First climb must install `structural` schema before any recursion is
-  possible.
-- **B. PR built-in.** Level 0 has `zero`, `succ`, and the `structural`
-  schema. Any PR operator (`add`, `mul`, `exp`) admits from the start.
+Options considered: (A) bare — only `zero`/`succ`, no schemas; first
+climb must install `structural`. (B) PR built-in — level 0 starts with
+the `structural` schema admitted.
 
-**Recommendation: B.** PR is well-understood, and the headline climb
-(PR → Ackermann) lands cleanly because Ackermann is provably not PR.
-With A, half the demo is installing `add` and `mul`, which adds
-exposition without payoff.
+**v1 shipped: (B), with a small twist.** Level 0 (`T₀`) explicitly
+installs the `structural` schema as its first climb step, but no
+operators come for free. The intermediate climbs (`T_pred`, …,
+`T_fib`) admit PR operators one at a time. The pedagogy gains the
+visible install of `structural` while avoiding the (A)-style trivial
+opener.
 
 ### D2. Operator definition: embedded syntax or Lean function?
 
-- **A. Embedded syntax.** Operators carry an `Expr` body parametric
-  over arg numerals; `eval` interprets bodies relative to a theory.
-  Substrate is genuinely *a language*; the climb is visible at the
-  level of source code.
-- **B. Lean function.** Operators carry a `Nat → ... → Nat` Lean
-  function. `eval` just dispatches. Substrate is "any Lean total
-  function;" climb is trivial because Lean already enforces totality.
+Options considered: (A) `Expr` body interpreted by `eval`; substrate
+is a language. (B) Lean function; `apply` just dispatches.
 
-**Recommendation: A.** B collapses the substrate into Lean itself —
-there's nothing to climb because Lean's kernel is already the gate.
-A makes "the calculator is a language with its own admissibility
-criterion" visible, which is the whole pedagogical point.
+**v1 shipped: (B), with the gap acknowledged.** Operators carry
+`fn : List Nat → Nat`. The kernel accepts any Lean-total function;
+the `schema` field on the operator records *which schema the operator
+was admitted under* but does not constrain the function's recursion
+shape. Admission preconditions check only schema presence and name
+freshness.
+
+**v2 target: (A)**, exactly as originally argued. The substrate
+becomes an embedded `Expr` type; operators carry bodies; the
+certificate is structural decrease per recursive call. The substrate
+stops being "any Lean total function" and becomes "expressions in our
+small language whose recursive calls are decreasing under the declared
+schema's relation." This is the open structural fix; see *v2 plan*.
 
 ### D3. `eval` strategy: fuel-bounded or Lean-WF?
 
-- **A. Fuel-bounded.** `eval : Theory → Nat → Expr → Option Nat`. Easy
-  to define. Totality is a separate theorem: for each admitted theory
-  `T` and input `e`, there exists `fuel` with `eval T fuel e ≠ none`.
-- **B. Lean-WF.** Define `eval` via Lean's well-founded recursion using
-  the theory's certified schemas as the termination measure.
-  Conceptually clean but engineering is hard — Lean's `termination_by`
-  needs the measure visible at definition time, and theories are
-  runtime data.
-
-**Recommendation: A.** Fuel-bounded is climber-style and avoids the
-worst engineering tarpit. Totality lives at the proof level, not the
-definition level.
+This decision is moot in v1 (no `eval`, since operators are Lean
+functions). **For v2:** fuel-bounded `eval` remains the recommendation,
+matching climber's style.
 
 ### D4. Termination certificate format
 
-A certificate proves: every recursive call in this operator's body
-decreases under some admitted schema's well-founded relation.
-
-- **A. Direct Lean `WellFounded` proof.** Maximum flexibility,
-  matches climber's `SoundExtension.sound`. Verbose.
-- **B. Schema-instantiation DSL.** Each schema exposes a structured
-  check (e.g., `structural` exposes "show the first argument is
-  syntactically a constructor smaller than the LHS"); the certificate
-  is the instantiation data. Cleaner demos but more code.
-
-**Recommendation: A for v1, B as future work.** Get the soundness
-theorem proved first; ergonomics later.
+This decision is moot in v1 (operators carry their function directly).
+**For v2:** direct Lean `WellFounded` proofs to start; a schema-
+instantiation DSL is later ergonomics.
 
 ### D5. The disaster demo (without check)
 
-- **A. Bogus termination cert.** The proposer claims `structural`
-  decrease where the recursive call doesn't actually decrease.
-  Without the kernel check, `eval` enters an infinite loop.
-- **B. Bogus schema.** The proposer claims a non-well-founded relation
-  is well-founded. Same effect: admitted operators under it can loop.
+Options considered: (A) bogus termination cert on an operator —
+without check, `eval` loops. (B) bogus schema — without check,
+operators under it admit and can loop.
 
-**Recommendation: B.** Higher-leverage — one bad schema corrupts every
-operator under it, including future ones. Mirrors lean-sage's "without
-governance, `(+ 1 2) ⇒ 0`" but at the schema layer.
+**v1 shipped: neither directly.** `Schema` requires a `WellFounded`
+proof in Lean, so a bogus schema cannot be constructed without
+`sorry`. `Operator.fn` is a total Lean function, so a non-terminating
+function cannot be constructed without `partial`. The "without check"
+world is closed at the Lean type level, not via an external switch.
+
+What *is* demonstrated: the admission gate refuses (1) operators
+referencing absent schemas, (2) operator-name shadowing, and
+(3) schema-name shadowing. Commented refusal witnesses in `Demo.lean`
+each fail `by decide` at compile time on uncommenting.
 
 ### D6. Reflective depth
 
-The architecture wants two-level reflection: the schema gate is itself
-extensible through the kernel. Concretely:
+**v1 shipped: partial.** The kernel admits both operators (against
+admitted schemas) and schemas (via direct WF proofs), and both go
+through the same `WellFormed`-preserving admission API. So the gate's
+admission criteria *can* be extended — `installSchema` adds a new
+schema, which then governs subsequent operator admissions — but
+schemas don't yet refer to each other's WF proofs (no transfinite
+schema using a lex schema in its WF proof).
 
-- The kernel admits operators against admitted schemas.
-- The kernel admits schemas via direct Lean WF proofs.
-- A schema, once admitted, can itself be invoked by *later schemas* —
-  e.g., a transfinite schema may use a lex schema in its WF proof.
-
-This makes "the gate's admission criteria are themselves modifiable
-through the gate" literal. Same shape as climber's `installPolicy`.
+**v2 target:** make schemas compositional, e.g. an `epsilon0` schema
+whose WF proof uses lex schemas internally; climber's `installPolicy`
+analogue at the schema layer.
 
 ### D7. Headline pedagogical scenes
 
-Proposed scene list for `Demo.lean`:
-
-1. **Level 0.** `T₀ = ⟨structural⟩` + no operators. State: PR is
-   admissible-in-principle, no operators yet installed.
-2. **Climb 1.** Install `add`, `mul`, `exp` under `structural`. All admit.
-3. **Climb 2 (refused).** Propose `Ackermann` under `structural`. The
-   recursive call `A(n, A(S n, m))` doesn't decrease the first arg
-   alone — kernel refuses. (The audience sees the gate biting.)
-4. **Climb 3.** Install `lex2` schema. WF proof: lex order on `Nat × Nat`
-   is well-founded (one Lean lemma).
-5. **Climb 4.** Install `Ackermann` under `lex2`. Admits.
-6. **Compute.** `Ackermann(3, 3) = 61`. `Ackermann(4, 1) = 65533`.
-7. **Counterpoint.** `ackermann_not_PR`: in a separating model (the
-   class of all PR-definable functions), Ackermann isn't reachable.
-   The line is crossed *provably*, not just empirically.
-
-Optional further rung (probably v2):
-
-8. **Climb 5.** Install `epsilon0` schema. Install Goodstein. Compute
-   a small value. Crosses the "PA-provable totality" line.
+**v1 shipped: 7 scenes** in `Smoke.lean`, anchored by the climb
+sequence in `Demo.lean`. The "kernel refuses Ackermann under
+structural" scene from the original proposal isn't a real gate
+firing in v1 — it's Lean's elaborator refusing a structural
+termination measure for Ackermann's body, with the refusal recorded
+as a commented `badAckImpl` in `Demo.lean`. In v2, the refusal would
+become a true gate-level event.
 
 ### D8. Headline theorems
 
-Concrete proof obligations:
+**v1 shipped:**
+- **`empty_wellFormed`** — the empty theory is well-formed.
+- **`installSchema_wellFormed`** / **`installOp_wellFormed`** —
+  the climb API preserves well-formedness.
+- **Per-rung theorems** — `T₀_wellFormed`, `T_pred_wellFormed`, …,
+  `T_climbed_wellFormed`.
 
-- **`climb_sound`** — every operator in any climbed theory is total.
-  By induction on climbing steps; each step's certificate type-checked
-  at admission. (Analogue: climber's `climb_sound`.)
-- **`ackermann_not_admissible_in_T₀`** — countermodel. The class of
-  functions admissible under `structural` alone is a proper subset of
-  total functions. Ackermann's three-clause definition cannot be cast
-  to fit `structural`. (Analogue: climber's `peirce_not_derivable_in_T₀`.)
-- **`T_climbed_admits_ackermann`** — after `installSchema lex2;
-  installOp ackermann`, `Ackermann` is in `T_climbed.operators` with
-  a valid certificate. (Analogue: climber's `T₁_derives_peirce`.)
+**v2 target:**
+- **`climb_sound`** — every operator in any climbed theory is total
+  *by structural decrease under its declared schema*. Requires
+  embedded bodies.
+- **`ackermann_not_admissible_in_T₀`** — countermodel showing the
+  class admitted under `structural` alone is a proper subset of total
+  functions. Requires syntactic characterization of structural-
+  admissible bodies.
 
 ### D9. LLM proposer
 
-Same shape as climber/lean-sage/defeater: Bedrock cascade. Each round
-asks Claude for either an operator or a schema; kernel admits or refuses;
-admitted items accumulate in a regenerated `Climbed.lean`. Probably
-slot in as v2 after the static demos work.
+**v1 shipped: not included.** Static demos only. v2 will follow the
+climber/lean-sage Bedrock-cascade pattern.
 
-**Decision:** static demos first, LLM cascade after.
-
-## Architecture sketch
+## Architecture (v1, as shipped)
 
 ```
 climbing-calc/
 ├── lakefile.lean
-├── lean-toolchain                  # leanprover/lean4:v4.29.1 (match climber)
+├── lean-toolchain                  # leanprover/lean4:v4.29.1
 ├── ClimbingCalc.lean               # top-level imports
 ├── ClimbingCalc/
-│   ├── Object.lean                 # Expr, Theory, eval (fuel), Operator, Schema
-│   ├── Climb.lean                  # installSchema, installOp, climb_sound
-│   ├── Schemas.lean                # structural, lex2, (epsilon0 v2)
-│   ├── Demo.lean                   # the 7 scenes, Ackermann admitted
-│   ├── Counter.lean                # ackermann_not_PR separating model
-│   ├── Reflection.lean             # (v2) epsilon0 / Goodstein rung
-│   ├── Bedrock.lean                # (v2) LLM wrapper
-│   ├── Elab.lean                   # (v2) splice and admit
-│   └── Runner.lean                 # (v2) cascade orchestrator
+│   ├── Object.lean                 # Schema, Operator, Theory, apply,
+│   │                               # SchemaAdmissible, OperatorAdmissible
+│   ├── Schemas.lean                # structuralSchema, lex2Schema
+│   ├── Climb.lean                  # installSchema, installOp, WellFormed,
+│   │                               # empty_wellFormed, installSchema_wellFormed,
+│   │                               # installOp_wellFormed
+│   ├── Demo.lean                   # the climb scenes, all operators, per-rung
+│   │                               # WF theorems, commented refusal witnesses
+│   └── Counter.lean                # "line crossed" witness (A(3,8) = 2045)
 ├── Smoke.lean                      # lake exe smoke
-├── RunnerMain.lean                 # (v2)
 ├── README.md
 └── DESIGN.md                       # this file
 ```
 
-## LOC budget
+v2 will add (or restore from this design's earlier sketch):
+`Reflection.lean` (ε₀ rung), `Bedrock.lean`, `Elab.lean`,
+`Runner.lean`, `RunnerMain.lean`.
 
-Target ~700 LOC for v1 (no LLM):
+## LOC (v1 actual)
 
-- `Object.lean` ~200 — `Expr`, `Theory`, fuel-bounded `eval`, `Operator`, `Schema`.
-- `Climb.lean` ~250 — `installSchema`, `installOp`, `climb_sound`.
-- `Schemas.lean` ~100 — `structural`, `lex2` with WF proofs.
-- `Demo.lean` ~100 — 7 scenes.
-- `Counter.lean` ~50 — separating model for Ackermann-not-PR.
+| File | LOC |
+|---|---|
+| `Object.lean`   |  83 |
+| `Schemas.lean`  |  30 |
+| `Climb.lean`    | 150 |
+| `Demo.lean`     | 325 |
+| `Counter.lean`  |  56 |
+| `Smoke.lean`    |  66 |
+| (top-level)     |   5 |
+| **total**       | **715** |
 
-v2 adds ~600 LOC for the LLM cascade and the ε₀ rung.
+In line with the original ~700 LOC budget.
 
 ## Scope
 
