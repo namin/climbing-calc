@@ -35,29 +35,34 @@ Scene 2: T₀ — install structural schema
   schemas: [structural]
   operators: []
 
-Scene 3: T₁ — admit add, mul, exp under structural
-  operators: [exp, mul, add]
+Scene 3: T₁ — admit PR operators under structural
+  operators: [fib, fact, exp, mul, add, double, pred]
+  pred([7]): (some 6)
+  double([7]): (some 14)
   add([2, 3]): (some 5)
   mul([3, 4]): (some 12)
   exp([2, 5]): (some 32)
+  fact([5]): (some 120)
+  fib([10]): (some 55)
 
 Scene 4: T₂ — install lex2 schema
   schemas: [lex2, structural]
 
-Scene 5: T_climbed — admit ackermann under lex2
-  operators: [ackermann, exp, mul, add]
-  ackermann([0, 5]): (some 6)
-  ackermann([1, 5]): (some 7)
-  ackermann([2, 2]): (some 7)
+Scene 5: T_climbed — admit ackermann and sudan under lex2
+  operators: [sudan, ackermann, fib, fact, exp, mul, add, double, pred]
   ackermann([3, 3]): (some 61)
+  sudan([1, 1, 2]): (some 8)
+  sudan([2, 1, 1]): (some 8)
 
 Scene 6: refusal — wrong arity / unknown operator
   ackermann([1]): none
+  sudan([1, 1]): none
   nonexistent([0]): none
 
 Scene 7: the line crossed
   ackermann([3, 7]): (some 1021)
   exp([2, 10]): (some 1024)
+  fact([10]): (some 3628800)
 ```
 
 ## The pattern
@@ -77,18 +82,26 @@ an `Operator` value cannot exist without a Lean-typed total function.
 
 | Theory | Schemas admitted | Operators admitted |
 |---|---|---|
-| `T_bare`    | —                       | —                          |
-| `T₀`        | structural              | —                          |
-| `T₁`        | structural              | add, mul, exp              |
-| `T₂`        | structural, lex2        | add, mul, exp              |
-| `T_climbed` | structural, lex2        | add, mul, exp, ackermann   |
+| `T_bare`    | —                | —                                                       |
+| `T₀`        | structural       | —                                                       |
+| `T₁`        | structural       | pred, double, add, mul, exp, fact, fib                  |
+| `T₂`        | structural, lex2 | pred, double, add, mul, exp, fact, fib                  |
+| `T_climbed` | structural, lex2 | pred, double, add, mul, exp, fact, fib, ackermann, sudan |
 
 Each transition is one `installSchema` or `installOp` call. The
-recursion `A(n+1, m+1) = A(n, A(n+1, m))` calls back into itself with
-the *same* first argument — no single coordinate decreases. The `lex2`
-schema (lexicographic order on `Nat × Nat`) is the new well-foundedness
-needed to admit it; once `lex2` is in the theory, Lean's elaborator
-accepts `ackImpl` via the standard `termination_by` machinery.
+recursions `A(n+1, m+1) = A(n, A(n+1, m))` and Sudan's
+`F_{n+1}(x, y+1) = F_n(F_{n+1}(x, y), F_{n+1}(x, y) + y + 1)` call back
+into themselves with the *same* first argument — no single coordinate
+decreases. The `lex2` schema (lexicographic order on `Nat × Nat`) is
+the new well-foundedness needed to admit them; once `lex2` is in the
+theory, Lean's elaborator accepts both via the standard `termination_by`
+machinery.
+
+**The refusal witness.** `Demo.lean` carries a commented-out
+`badAckImpl` that's exactly Ackermann's shape but asks Lean to admit
+it under a structural measure on the first argument alone. The build
+fails on uncommenting; this is the "without the gate" world made
+visible at compile time.
 
 ## Files
 

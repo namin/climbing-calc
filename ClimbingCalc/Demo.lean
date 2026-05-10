@@ -28,17 +28,49 @@ Each operator is defined by Lean primitive recursion on its first
 argument; Lean's type checker accepts these directly. The `schema`
 field declares that they were admitted under `structural`. -/
 
-private def addImpl : Nat → Nat → Nat
-  | 0,     m => m
-  | n + 1, m => (addImpl n m) + 1
+/-
+The implementations below use Lean's builtin `Nat` operations for
+runtime efficiency. The *specification* of each operator is still
+primitive-recursive — Lean's `Nat.add` is itself defined by recursion
+on one argument — so admission under `structural` is unchanged. We
+just don't pay for naive linear-time addition at runtime, which would
+make `fact 10` stack-overflow when added through `mulImpl 10 _`.
 
-private def mulImpl : Nat → Nat → Nat
-  | 0,     _ => 0
-  | n + 1, m => addImpl m (mulImpl n m)
+The naive PR definitions (for reference; what the climb's pedagogy
+claims is admissible):
 
-private def expImpl : Nat → Nat → Nat
-  | _, 0     => 1
-  | b, e + 1 => mulImpl b (expImpl b e)
+    addImpl 0     m = m
+    addImpl (n+1) m = succ (addImpl n m)
+
+    mulImpl 0     _ = 0
+    mulImpl (n+1) m = addImpl m (mulImpl n m)
+
+    expImpl _ 0     = 1
+    expImpl b (e+1) = mulImpl b (expImpl b e)
+
+Each of these compiles to runtime that's quadratic-or-worse on Lean's
+unary `Nat`; we use the compiled `Nat.add`, `Nat.mul`, `Nat.pow`
+instead.
+-/
+
+private def addImpl (n m : Nat) : Nat := n + m
+private def mulImpl (n m : Nat) : Nat := n * m
+private def expImpl (b e : Nat) : Nat := b ^ e
+
+private def factImpl : Nat → Nat
+  | 0     => 1
+  | n + 1 => (n + 1) * factImpl n
+
+private def fibImpl : Nat → Nat
+  | 0     => 0
+  | 1     => 1
+  | n + 2 => fibImpl (n + 1) + fibImpl n
+
+private def doubleImpl (n : Nat) : Nat := 2 * n
+
+private def predImpl : Nat → Nat
+  | 0     => 0
+  | n + 1 => n
 
 def addOp : Operator where
   name   := "add"
@@ -64,8 +96,41 @@ def expOp : Operator where
     | [b, e] => expImpl b e
     | _      => 0
 
+def factOp : Operator where
+  name   := "fact"
+  arity  := 1
+  schema := "structural"
+  fn args := match args with
+    | [n] => factImpl n
+    | _   => 0
+
+def fibOp : Operator where
+  name   := "fib"
+  arity  := 1
+  schema := "structural"
+  fn args := match args with
+    | [n] => fibImpl n
+    | _   => 0
+
+def doubleOp : Operator where
+  name   := "double"
+  arity  := 1
+  schema := "structural"
+  fn args := match args with
+    | [n] => doubleImpl n
+    | _   => 0
+
+def predOp : Operator where
+  name   := "pred"
+  arity  := 1
+  schema := "structural"
+  fn args := match args with
+    | [n] => predImpl n
+    | _   => 0
+
 /-- Theory after structural-schema climb: PR operators admitted. -/
-def T₁ : Theory := T₀.installOps [addOp, mulOp, expOp]
+def T₁ : Theory := T₀.installOps
+  [predOp, doubleOp, addOp, mulOp, expOp, factOp, fibOp]
 
 /-! ### Scene 4 — Install the lex2 schema
 
@@ -87,6 +152,29 @@ private def ackImpl : Nat → Nat → Nat
   | n + 1, 0     => ackImpl n 1
   | n + 1, m + 1 => ackImpl n (ackImpl (n + 1) m)
 
+/--
+**Sudan's function** — the *other* canonical non-PR function. Like
+Ackermann, it's defined by simultaneous double recursion on two
+arguments:
+
+    F_0(x, y)     = x + y
+    F_{n+1}(x, 0) = x
+    F_{n+1}(x, y+1) = F_n(F_{n+1}(x, y), F_{n+1}(x, y) + y + 1)
+
+Termination is lexicographic on `(n, y)`: at `(n+1, y+1)`, one
+recursive call drops to `(n+1, y)` (second decreases) and the other to
+`(n, _)` (first decreases). The parameter `x` is irrelevant to the
+measure but participates in computation. Like Ackermann, Sudan's
+function isn't admissible under `structural` alone; with `lex2`
+installed, Lean's elaborator accepts the definition.
+-/
+private def sudanImpl : Nat → Nat → Nat → Nat   -- args ordered (n, y, x) for lex measure
+  | 0,     y,     x => x + y
+  | _ + 1, 0,     x => x
+  | n + 1, y + 1, x =>
+    let v := sudanImpl (n + 1) y x
+    sudanImpl n (v + y + 1) v
+
 def ackermannOp : Operator where
   name   := "ackermann"
   arity  := 2
@@ -95,22 +183,59 @@ def ackermannOp : Operator where
     | [n, m] => ackImpl n m
     | _      => 0
 
-/-- Climbed theory: structural + lex2; add, mul, exp, ackermann. -/
-def T_climbed : Theory := T₂.installOp ackermannOp
+def sudanOp : Operator where
+  name   := "sudan"
+  arity  := 3
+  schema := "lex2"
+  fn args := match args with
+    | [n, x, y] => sudanImpl n y x   -- present as F_n(x, y), measure on (n, y)
+    | _         => 0
+
+/-- Climbed theory: structural + lex2; PR operators + ackermann + sudan. -/
+def T_climbed : Theory := T₂.installOps [ackermannOp, sudanOp]
+
+/-! ### Scene 5b — the refusal witness
+
+The following definition is *exactly the shape* of Ackermann's
+recursion, but if you ask Lean to accept it under the single-argument
+structural measure (default for a `Nat → Nat → Nat` function), the
+elaborator refuses. Uncomment to verify; the build will fail with
+something like `fail to show termination`.
+
+```lean
+def badAckImpl : Nat → Nat → Nat
+  | 0,     m     => m + 1
+  | n + 1, 0     => badAckImpl n 1
+  | n + 1, m + 1 => badAckImpl n (badAckImpl (n + 1) m)
+termination_by n _ => n   -- structural on first arg — Lean refuses
+```
+
+The recursive call `badAckImpl (n + 1) m` has the *same* first
+argument, so a structural measure on `n` alone doesn't decrease.
+Installing `lex2` (which `ackImpl` and `sudanImpl` use implicitly via
+Lean's default lex measure) is what closes the gap. -/
 
 /-! ### Scene 6 — Compute -/
 
+example : T_climbed.apply "pred" [7] = some 6           := by native_decide
+example : T_climbed.apply "double" [7] = some 14        := by native_decide
 example : T_climbed.apply "add" [2, 3] = some 5         := by native_decide
 example : T_climbed.apply "mul" [3, 4] = some 12        := by native_decide
 example : T_climbed.apply "exp" [2, 5] = some 32        := by native_decide
+example : T_climbed.apply "fact" [5] = some 120         := by native_decide
+example : T_climbed.apply "fib" [10] = some 55          := by native_decide
 example : T_climbed.apply "ackermann" [0, 5] = some 6   := by native_decide
 example : T_climbed.apply "ackermann" [1, 5] = some 7   := by native_decide
 example : T_climbed.apply "ackermann" [2, 2] = some 7   := by native_decide
 example : T_climbed.apply "ackermann" [3, 3] = some 61  := by native_decide
+example : T_climbed.apply "sudan" [0, 5, 3] = some 8    := by native_decide
+example : T_climbed.apply "sudan" [1, 1, 1] = some 3    := by native_decide
+example : T_climbed.apply "sudan" [1, 1, 2] = some 8    := by native_decide
 
 /-! ### Scene 7 — Refusal: bad arity gets rejected -/
 
 example : T_climbed.apply "ackermann" [1] = none        := by native_decide
+example : T_climbed.apply "sudan" [1, 1] = none         := by native_decide
 example : T_climbed.apply "nonexistent" [0] = none      := by native_decide
 
 end ClimbingCalc

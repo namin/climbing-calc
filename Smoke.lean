@@ -24,31 +24,43 @@ def main : IO Unit := do
   label "operators" (toString (T₀.operators.map (·.name)))
   IO.println ""
 
-  IO.println "Scene 3: T₁ — admit add, mul, exp under structural"
+  IO.println "Scene 3: T₁ — admit PR operators under structural"
   label "operators" (toString (T₁.operators.map (·.name)))
+  showApply T₁ "pred" [7]
+  showApply T₁ "double" [7]
   showApply T₁ "add" [2, 3]
   showApply T₁ "mul" [3, 4]
   showApply T₁ "exp" [2, 5]
+  showApply T₁ "fact" [5]
+  showApply T₁ "fib" [10]
   IO.println ""
 
   IO.println "Scene 4: T₂ — install lex2 schema"
   label "schemas" (toString (T₂.schemas.map (·.name)))
   IO.println ""
 
-  IO.println "Scene 5: T_climbed — admit ackermann under lex2"
+  IO.println "Scene 5: T_climbed — admit ackermann and sudan under lex2"
   label "operators" (toString (T_climbed.operators.map (·.name)))
   showApply T_climbed "ackermann" [0, 5]
   showApply T_climbed "ackermann" [1, 5]
   showApply T_climbed "ackermann" [2, 2]
   showApply T_climbed "ackermann" [3, 3]
   IO.println ""
+  showApply T_climbed "sudan" [0, 5, 3]   -- F_0(5, 3) = 5 + 3
+  showApply T_climbed "sudan" [1, 1, 1]   -- F_1(1, 1)
+  showApply T_climbed "sudan" [1, 1, 2]   -- F_1(1, 2)
+  showApply T_climbed "sudan" [2, 1, 1]   -- F_2(1, 1)
+  IO.println ""
 
   IO.println "Scene 6: refusal — wrong arity / unknown operator"
   showApply T_climbed "ackermann" [1]
+  showApply T_climbed "sudan" [1, 1]
   showApply T_climbed "nonexistent" [0]
   IO.println ""
 
   IO.println "Scene 7: the line crossed"
   showApply T_climbed "ackermann" [3, 7]
   showApply T_climbed "exp" [2, 10]
-  IO.println "  ackermann(n, m) outgrows any fixed tower of exp; lex2 admits it."
+  showApply T_climbed "fact" [10]
+  IO.println "  ackermann(n, m) outgrows any fixed tower of exp;"
+  IO.println "  lex2 is the schema that admits this recursion shape."
