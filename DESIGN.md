@@ -31,7 +31,8 @@ admissible after appropriate schema admissions**.
 |---|---|
 | Substrate | A small total functional language; theory `T = (schemas, operators)` |
 | Proposer | Human or LLM offering an operator or a schema, with its certificate |
-| Gate | Kernel checks: schema's well-foundedness proof type-checks; operator's recursive calls decrease under an admitted schema |
+| Gate (v1, shipped) | Kernel checks: schema's `WellFounded` proof type-checks; operator's `fn` is Lean-typed total; admission preconditions hold (schema present, names fresh) |
+| Gate (v2, target) | Additionally: operator's recursive calls in its body decrease under the admitted schema's relation (requires embedded-language substrate) |
 
 ## Decisions to make
 

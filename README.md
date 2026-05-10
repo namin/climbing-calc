@@ -1,10 +1,23 @@
 # climbing-calc
 
-A calculator whose class of admissible total functions **grows
-verifiably** under proposer/gate control. Each climb admits either a
-new operator (certified to terminate under an admitted schema) or a
-new schema (a well-founded relation, certified well-founded). The
-class of admissible operators strictly grows across the climb.
+A calculator whose class of admissible total functions **grows under
+proof-bearing admission**. Each climb admits either a new operator
+(represented by a Lean-total function, admitted only if it names an
+already-installed schema and has a fresh name) or a new schema (a
+well-founded relation, certified well-founded by a Lean `WellFounded`
+proof). The class of admissible operators grows monotonically across
+the climb.
+
+**What v1 establishes** is the *architecture* of proof-gated extension:
+schemas can't enter the theory without a `WellFounded` proof; operators
+can't enter without referencing an installed schema; nothing shadows.
+
+**What v1 does NOT yet certify** is that an operator's recursion
+actually decreases under its declared schema's relation. The
+`schema` field is informational at this layer — it's checked at
+admission for *presence in the theory* but not for *structural
+binding to the function's recursion*. Closing that gap is the v2
+embedded-language plan described in [`DESIGN.md`](DESIGN.md).
 
 Climber re-rendered with computation as the substrate. Same kernel
 discipline, different substrate, headline crosses a *computational*
@@ -50,7 +63,13 @@ Scene 4: T₂ — install lex2 schema
 
 Scene 5: T_climbed — admit ackermann and sudan under lex2
   operators: [sudan, ackermann, fib, fact, exp, mul, add, double, pred]
+  ackermann([0, 5]): (some 6)
+  ackermann([1, 5]): (some 7)
+  ackermann([2, 2]): (some 7)
   ackermann([3, 3]): (some 61)
+
+  sudan([0, 5, 3]): (some 8)
+  sudan([1, 1, 1]): (some 3)
   sudan([1, 1, 2]): (some 8)
   sudan([2, 1, 1]): (some 8)
 
@@ -60,9 +79,11 @@ Scene 6: refusal — wrong arity / unknown operator
   nonexistent([0]): none
 
 Scene 7: the line crossed
-  ackermann([3, 7]): (some 1021)
+  ackermann([3, 8]): (some 2045)
   exp([2, 10]): (some 1024)
   fact([10]): (some 3628800)
+  A(3, 8) = 2045 > 1024 = exp(2, 10);
+  Ackermann outgrows any fixed exponential; lex2 admits the shape.
 ```
 
 ## The pattern
@@ -80,19 +101,20 @@ an `Operator` value cannot exist without a Lean-typed total function.
 fresh); `Theory.installOp` requires `OperatorAdmissible` (declared
 schema present *and* operator name fresh). Bogus admissions — claiming
 a schema that hasn't been installed, or shadowing an existing operator
-— are rejected at admission time.
+— are rejected at admission time. `Theory.WellFormed` is preserved by
+the climb API: every theory built through `installSchema`/`installOp`
+has distinct schema names, distinct operator names, and every
+operator's declared schema is present.
 
-**Honest scoping.** What v1 does *not* enforce is the structural
-coupling between an operator's `fn` and its declared schema's
-relation. An `Operator` carries `fn : List Nat → Nat` as opaque Lean
-data, and Lean's type checker accepts any total function regardless
-of which schema name appears on the record. The bound between "I
-declared `schema := "lex2"`" and "my recursion actually decreases
-under lex2" lives at the level of code review and Lean's elaborator
-choosing a measure for the underlying function definition — not the
-calculator's gate. Closing that gap is v2: an embedded operator
-language with structural termination certificates per recursive call.
-See [`DESIGN.md`](DESIGN.md).
+**The remaining gap.** None of the above certifies that an operator's
+`fn` *actually decreases* under its declared schema's relation. An
+`Operator` carries `fn : List Nat → Nat` as opaque Lean data; Lean's
+type checker accepts any total function, regardless of which schema
+name appears on the record. So a v1 operator could in principle name
+`"structural"` while internally using Ackermann's recursion — the
+gate would admit it. Closing that gap is v2: an embedded operator
+language with a structural termination certificate per recursive
+call. See [`DESIGN.md`](DESIGN.md), *v2 plan*.
 
 ## The climb
 
@@ -123,21 +145,30 @@ visible at compile time.
 
 | File | Purpose |
 |---|---|
-| `ClimbingCalc/Object.lean`   | `Schema`, `Operator`, `Theory`, `Theory.apply` |
+| `ClimbingCalc/Object.lean`   | `Schema`, `Operator`, `Theory`, `Theory.apply`, `SchemaAdmissible`, `OperatorAdmissible` |
 | `ClimbingCalc/Schemas.lean`  | `structuralSchema`, `lex2Schema` |
-| `ClimbingCalc/Climb.lean`    | `installSchema`, `installOp`, structural theorems |
-| `ClimbingCalc/Demo.lean`     | The seven scenes; `addImpl`, `mulImpl`, `expImpl`, `ackImpl` |
-| `ClimbingCalc/Counter.lean`  | The "line crossed" witness: `ack(3,7) > exp(2,10) − 3` |
+| `ClimbingCalc/Climb.lean`    | `installSchema`, `installOp`, `Theory.WellFormed` + preservation theorems |
+| `ClimbingCalc/Demo.lean`     | The scenes; `addImpl`, `mulImpl`, `expImpl`, `factImpl`, `fibImpl`, `ackImpl`, `sudanImpl`; refusal witnesses |
+| `ClimbingCalc/Counter.lean`  | The "line crossed" witness: `ack(3,8) = 2045 > 1024 = exp(2,10)` |
 | `Smoke.lean`                 | `lake exe smoke` |
 
 ## What's in scope (v1) vs out
 
 **In scope (this version):**
-- Two schemas: structural and lex2.
-- Four operators: add, mul, exp, ackermann.
+- Two schemas: `structural`, `lex2`.
+- Seven operators under `structural`: `pred`, `double`, `add`, `mul`,
+  `exp`, `fact`, `fib`.
+- Two operators under `lex2`: `ackermann`, `sudan`.
+- Admission preconditions (`SchemaAdmissible`, `OperatorAdmissible`)
+  enforced at install time via `by decide`.
+- `Theory.WellFormed` invariant and preservation theorems for the
+  climb API.
+- Refusal witnesses (commented examples in `Demo.lean`).
 - Static demos via `lake exe smoke`.
 
-**Out of scope (future):**
+**Out of scope (deferred to v2):**
+- Embedded operator language with per-call structural termination
+  certificates — the deeper coupling of `fn` to its declared schema.
 - Goodstein's function (ε₀ recursion, crosses the PA-provable-totality line).
 - LLM proposer cascade (Bedrock-mediated, climber-style).
 - Mechanical proof that operators under `structural` form a proper

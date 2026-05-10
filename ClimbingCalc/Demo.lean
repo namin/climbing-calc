@@ -208,6 +208,26 @@ def T_ack   : Theory := T₂.installOp    ackermannOp ⟨by decide, by decide⟩
 def T_sudan : Theory := T_ack.installOp sudanOp     ⟨by decide, by decide⟩
 abbrev T_climbed : Theory := T_sudan
 
+/-! ### `T_climbed` is well-formed
+
+Every intermediate theory in the climb is well-formed because each
+admission step preserves the invariant. The chain of
+`installSchema_wellFormed` and `installOp_wellFormed` applications
+discharges it without any computation. -/
+
+theorem T_climbed_wellFormed : T_climbed.WellFormed :=
+  installOp_wellFormed
+    (installOp_wellFormed
+      (installSchema_wellFormed
+        (installOp_wellFormed
+          (installOp_wellFormed
+            (installOp_wellFormed
+              (installOp_wellFormed
+                (installOp_wellFormed
+                  (installOp_wellFormed
+                    (installOp_wellFormed
+                      (installSchema_wellFormed empty_wellFormed _) _) _) _) _) _) _) _) _) _) _
+
 /-! ### Scene 5b — the refusal witness
 
 The following definition is *exactly the shape* of Ackermann's
@@ -253,10 +273,14 @@ def T_bogus2 : Theory :=
   T_climbed.installOp shadowAck ⟨by decide, by decide⟩
 -- decide fails: T_climbed.hasOperator "ackermann" = true ≠ false
 
--- (3) Schema with a name that's already taken:
+-- (3) Schema with a name that's already taken (a valid duplicate —
+-- same name, same well-foundedness proof, freshness is the only
+-- failing condition):
 def dupSchema : Schema where
-  name := "structural"; Carrier := Nat
-  rel := fun _ _ => True; wf := ⟨fun _ => Acc.intro _ (by intro y h; exact absurd h (by sorry))⟩
+  name    := "structural"
+  Carrier := Nat
+  rel     := (· < ·)
+  wf      := Nat.lt_wfRel.wf
 def T_bogus3 : Theory :=
   T_climbed.installSchema dupSchema ⟨by decide⟩
 -- decide fails: T_climbed.hasSchema "structural" = true ≠ false
