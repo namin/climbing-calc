@@ -13,17 +13,34 @@ Same kernel discipline as climber, with the substrate swapped from a
 Hilbert-style derivation calculus to a small total functional language.
 Each climb admits either:
 
-1. a new total operator, certified to terminate via an admitted
-   well-foundedness schema, or
-2. a new schema (well-founded relation), certified well-founded.
+1. a new **Lean-total** operator, with admission preconditions proving
+   that its declared schema is installed and its name is fresh
+   (`OperatorAdmissible`), or
+2. a new **schema** (well-founded relation), certified well-founded
+   by a Lean `WellFounded` proof, and with a fresh name
+   (`SchemaAdmissible`).
 
-The class of admissible operators strictly grows across the climb. At
-level 0 (primitive recursion), Ackermann is provably inadmissible;
-after installing a lex schema, Ackermann admits; further climbs admit
-transfinite recursion. The headline crosses Peirce/Con(T₀) analogues
-on the computational side: **Ackermann is not primitive-recursive,
-Goodstein's function is not provably total in PA, both become
-admissible after appropriate schema admissions**.
+In v1, every theory built through the climb API is well-formed:
+distinct schema names, distinct operator names, every operator
+references an installed schema. `Theory.WellFormed` is proved
+preserved by `installSchema_wellFormed` and `installOp_wellFormed`,
+and the climb's instantiation is witnessed by per-rung theorems
+(`T₀_wellFormed`, `T_pred_wellFormed`, …, `T_climbed_wellFormed`).
+
+**v1 limitation.** The `schema` field on an operator is informational:
+checked at admission for *presence in the theory*, but not for
+*structural binding to the operator's recursion*. An operator
+declaring `schema := "structural"` could in principle have its `fn`
+implemented by lex2-style recursion; v1 would admit it.
+
+**v2 target.** Operator admission additionally certifies that the
+operator's recursive calls in its body decrease under the admitted
+schema's relation. This requires an embedded operator language; see
+*v2 plan* below. With v2 in place, the climb would cross *structurally*
+unreachable lines on the computational side, analogous to climber's
+crossing of Peirce and Con(T₀): Ackermann is not admissible under
+structural recursion alone; Goodstein's function is not admissible
+without transfinite recursion; etc.
 
 ## The pattern, instantiated
 
@@ -271,6 +288,28 @@ into:
 > itself.
 
 The latter is much closer to "reasonable reflection."
+
+### v2 sub-suggestion: arity-indexed schemas
+
+In v1, every `Schema` carries an arbitrary `Carrier : Type` and a
+relation on it, while every operator's `fn` is `List Nat → Nat`. The
+schema's relation is therefore not even type-aligned with the
+operator's argument space. For v2, the cleaner shape is to
+arity-index the schema:
+
+```lean
+structure Schema (arity : Nat) where
+  name : String
+  rel  : Vector Nat arity → Vector Nat arity → Prop
+  wf   : WellFounded rel
+```
+
+Operators then declare their arity statically and pair with a
+schema of matching arity. The embedded-language termination certificate
+becomes "for every recursive call in `body`, the call's argument
+vector is `rel`-less than the input argument vector" — both quantities
+typed as `Vector Nat arity`, no list-length sanity-check needed at
+runtime.
 
 ## Risks
 

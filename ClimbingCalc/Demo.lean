@@ -208,25 +208,37 @@ def T_ack   : Theory := T₂.installOp    ackermannOp ⟨by decide, by decide⟩
 def T_sudan : Theory := T_ack.installOp sudanOp     ⟨by decide, by decide⟩
 abbrev T_climbed : Theory := T_sudan
 
-/-! ### `T_climbed` is well-formed
+/-! ### Well-formedness, rung by rung
 
-Every intermediate theory in the climb is well-formed because each
-admission step preserves the invariant. The chain of
-`installSchema_wellFormed` and `installOp_wellFormed` applications
-discharges it without any computation. -/
+Every intermediate theory in the climb is well-formed. We prove it
+explicitly at each rung so the pedagogy matches the install sequence:
+one theorem per admission, threading the previous well-formedness
+through the corresponding preservation lemma. -/
 
-theorem T_climbed_wellFormed : T_climbed.WellFormed :=
-  installOp_wellFormed
-    (installOp_wellFormed
-      (installSchema_wellFormed
-        (installOp_wellFormed
-          (installOp_wellFormed
-            (installOp_wellFormed
-              (installOp_wellFormed
-                (installOp_wellFormed
-                  (installOp_wellFormed
-                    (installOp_wellFormed
-                      (installSchema_wellFormed empty_wellFormed _) _) _) _) _) _) _) _) _) _) _
+theorem T₀_wellFormed       : T₀.WellFormed       :=
+  installSchema_wellFormed empty_wellFormed       ⟨by decide⟩
+theorem T_pred_wellFormed   : T_pred.WellFormed   :=
+  installOp_wellFormed     T₀_wellFormed          ⟨by decide, by decide⟩
+theorem T_double_wellFormed : T_double.WellFormed :=
+  installOp_wellFormed     T_pred_wellFormed      ⟨by decide, by decide⟩
+theorem T_add_wellFormed    : T_add.WellFormed    :=
+  installOp_wellFormed     T_double_wellFormed    ⟨by decide, by decide⟩
+theorem T_mul_wellFormed    : T_mul.WellFormed    :=
+  installOp_wellFormed     T_add_wellFormed       ⟨by decide, by decide⟩
+theorem T_exp_wellFormed    : T_exp.WellFormed    :=
+  installOp_wellFormed     T_mul_wellFormed       ⟨by decide, by decide⟩
+theorem T_fact_wellFormed   : T_fact.WellFormed   :=
+  installOp_wellFormed     T_exp_wellFormed       ⟨by decide, by decide⟩
+theorem T_fib_wellFormed    : T_fib.WellFormed    :=
+  installOp_wellFormed     T_fact_wellFormed      ⟨by decide, by decide⟩
+theorem T₁_wellFormed       : T₁.WellFormed       := T_fib_wellFormed
+theorem T₂_wellFormed       : T₂.WellFormed       :=
+  installSchema_wellFormed T₁_wellFormed          ⟨by decide⟩
+theorem T_ack_wellFormed    : T_ack.WellFormed    :=
+  installOp_wellFormed     T₂_wellFormed          ⟨by decide, by decide⟩
+theorem T_sudan_wellFormed  : T_sudan.WellFormed  :=
+  installOp_wellFormed     T_ack_wellFormed       ⟨by decide, by decide⟩
+theorem T_climbed_wellFormed : T_climbed.WellFormed := T_sudan_wellFormed
 
 /-! ### Scene 5b — the refusal witness
 
