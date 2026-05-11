@@ -4,8 +4,7 @@ A calculator whose class of admissible total functions grows under
 **type-level proof-bearing admission**. The keynote's running
 example: climber re-rendered with computation as the substrate.
 
-For the v2 decision record, see [`AvsB.md`](AvsB.md). For v1's
-design (now superseded), see the git history.
+For v1's design (now superseded), see the git history.
 
 ## Goal
 
@@ -173,7 +172,6 @@ climbing-calc/
 │   │                               # climb sequence, per-rung WF theorems
 │   └── Counter.lean                # "line crossed" witness
 ├── Smoke.lean                      # lake exe smoke
-├── AvsB.md                         # the v2 A-vs-B decision record
 ├── README.md
 └── DESIGN.md                       # this file
 ```
@@ -186,9 +184,8 @@ climbing-calc/
   implemented here.
 - **Goodstein / ε₀ recursion.** Would require a transfinite-ordinal
   schema. Out of scope.
-- **Embedded operator *bodies* as data** (the rejected A path in
-  `AvsB.md`). Operator bodies are Lean closures, not inspectable
-  ASTs.
+- **Embedded operator *bodies* as data** (the rejected v2-A path).
+  Operator bodies are Lean closures, not inspectable ASTs.
 
 ## The remaining gap
 

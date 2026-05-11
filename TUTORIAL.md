@@ -434,8 +434,8 @@ universally-quantified soundness statement.
 
 It does not represent operator bodies as inspectable data. An
 `Operator S`'s `step` is a Lean closure. There is no `Expr` AST that
-an LLM proposer could ship as JSON. That's the rejected v2-A path
-(see `AvsB.md`); it would have given a more demoable "the kernel
+an LLM proposer could ship as JSON. That's the rejected v2-A path;
+it would have given a more demoable "the kernel
 receives a body and checks it" slide at the cost of substantial
 engineering. v2-B's bet is that **type-level binding** carries more
 formal rigor than **body-as-data inspectability**, even if the latter
@@ -456,5 +456,4 @@ artifact without changing its formal claims.
 - `ClimbingCalc/Counter.lean` — `ackermann(3,8) = 2045`.
 - `Smoke.lean` — the scene-by-scene executable; run with `lake exe smoke`.
 - `DESIGN.md` — design rationale for v2-B vs v2-A.
-- `AvsB.md` — the decision record for taking the B path.
 - `README.md` — summary, comparison to v1.

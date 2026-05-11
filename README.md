@@ -19,8 +19,7 @@ discipline (LCF-style admission of typed certificates), different
 substrate (total `List Nat → Nat` functions instead of formal
 derivations).
 
-See [`DESIGN.md`](DESIGN.md) for the design rationale and
-[`AvsB.md`](AvsB.md) for the v2-A-vs-B decision record.
+See [`DESIGN.md`](DESIGN.md) for the design rationale.
 
 ## Status
 
@@ -155,7 +154,7 @@ binding is enforced at admission by Lean's unifier.
   LLM proposer would have to generate Lean source — feasible via
   `lake env lean --run` like climber, but not done here).
 - Additional schemas (sum-measure, lex3, ε₀-recursion).
-- Embedded-language *bodies* as data (option A in `AvsB.md`).
+- Embedded-language *bodies* as data (the rejected v2-A path).
 
 ## Comparison to v1
 
