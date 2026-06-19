@@ -156,7 +156,7 @@ use lex2 recursion); v2 makes that unconstructible.
 ```
 climbing-calc/
 ├── lakefile.lean
-├── lean-toolchain                  # leanprover/lean4:v4.29.1
+├── lean-toolchain                  # leanprover/lean4:v4.30.0
 ├── ClimbingCalc.lean               # top-level imports
 ├── ClimbingCalc/
 │   ├── Object.lean                 # Schema, Operator S, AdmittedOperator,

@@ -23,7 +23,7 @@ See [`DESIGN.md`](DESIGN.md) for the design rationale.
 
 ## Status
 
-Builds clean on `leanprover/lean4:v4.29.1`. Zero `sorry`s. The smoke
+Builds clean on `leanprover/lean4:v4.30.0`. Zero `sorry`s. The smoke
 executable walks the climb scene by scene.
 
 ```bash
