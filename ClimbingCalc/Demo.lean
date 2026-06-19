@@ -132,25 +132,25 @@ abbrev T_climbed : Theory := T_sudan
 
 /-! ### Scene 6 — Compute -/
 
-example : T_climbed.apply "pred" [7] = some 6                 := by native_decide
-example : T_climbed.apply "double" [7] = some 14              := by native_decide
-example : T_climbed.apply "add" [2, 3] = some 5               := by native_decide
-example : T_climbed.apply "mul" [3, 4] = some 12              := by native_decide
-example : T_climbed.apply "fact" [5] = some 120               := by native_decide
-example : T_climbed.apply "fib" [10] = some 55                := by native_decide
-example : T_climbed.apply "ackermann" [0, 5] = some 6         := by native_decide
-example : T_climbed.apply "ackermann" [1, 5] = some 7         := by native_decide
-example : T_climbed.apply "ackermann" [2, 2] = some 7         := by native_decide
-example : T_climbed.apply "ackermann" [3, 3] = some 61        := by native_decide
-example : T_climbed.apply "sudan" [0, 5, 3] = some 8          := by native_decide
-example : T_climbed.apply "sudan" [1, 1, 1] = some 3          := by native_decide
-example : T_climbed.apply "sudan" [1, 2, 1] = some 8          := by native_decide
+#guard T_climbed.apply "pred" [7] == some 6
+#guard T_climbed.apply "double" [7] == some 14
+#guard T_climbed.apply "add" [2, 3] == some 5
+#guard T_climbed.apply "mul" [3, 4] == some 12
+#guard T_climbed.apply "fact" [5] == some 120
+#guard T_climbed.apply "fib" [10] == some 55
+#guard T_climbed.apply "ackermann" [0, 5] == some 6
+#guard T_climbed.apply "ackermann" [1, 5] == some 7
+#guard T_climbed.apply "ackermann" [2, 2] == some 7
+#guard T_climbed.apply "ackermann" [3, 3] == some 61
+#guard T_climbed.apply "sudan" [0, 5, 3] == some 8
+#guard T_climbed.apply "sudan" [1, 1, 1] == some 3
+#guard T_climbed.apply "sudan" [1, 2, 1] == some 8
 
 /-! ### Scene 7 — Refusal: bad arity / unknown -/
 
-example : T_climbed.apply "ackermann" [1] = none              := by native_decide
-example : T_climbed.apply "sudan" [1, 1] = none               := by native_decide
-example : T_climbed.apply "nonexistent" [0] = none            := by native_decide
+#guard T_climbed.apply "ackermann" [1] == none
+#guard T_climbed.apply "sudan" [1, 1] == none
+#guard T_climbed.apply "nonexistent" [0] == none
 
 /-! ### Scene 5b — refusal witnesses (commented)
 

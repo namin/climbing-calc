@@ -18,16 +18,16 @@ admitted at level 1. Concretely, `ackermann(3, 8) = 2045`, which
 exceeds any value the structural operators in the v2 zoo can produce
 within reasonable bounds. -/
 
-/-- A concrete witness that Ackermann overtakes a fixed PR
+/- A concrete witness that Ackermann overtakes a fixed PR
 calculation: `ackermann(3, 8) = 2045`. The closed form is
 `A(3, n) = 2^(n+3) − 3`, so each unit increase in `n` doubles the
 output — Ackermann climbs by one level of operator hierarchy per
 unit, where exponentiation would climb by one. -/
-example : T_climbed.apply "ackermann" [3, 8] = some 2045 := by native_decide
+#guard T_climbed.apply "ackermann" [3, 8] == some 2045
 
-/-- For comparison: `fact(10) = 3628800` is the largest value the
+/- For comparison: `fact(10) = 3628800` is the largest value the
 structural operators in the v2 zoo (no `exp`) reach quickly. -/
-example : T_climbed.apply "fact" [10] = some 3628800 := by native_decide
+#guard T_climbed.apply "fact" [10] == some 3628800
 
 /-
 The next rung would be `ackermann(4, 1) = 65533 = 2^16 − 3`, but the
